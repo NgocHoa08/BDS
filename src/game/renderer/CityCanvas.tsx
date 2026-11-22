@@ -11,7 +11,7 @@ import {
   PALACE_BOUNDS,
   REGION_NAMES,
 } from '../constants';
-import { formatMoney, getLandPrice, isTetNightActive } from '../engine';
+import { formatMoney, getLandPrice, getMapHeight, isTetNightActive } from '../engine';
 import { GRAPHICS_PRESETS, store } from '../store';
 import type { GameState, Plot, RegionId } from '../types';
 import {
@@ -52,15 +52,13 @@ const GROUND_COLORS: Record<RegionId, [string, string]> = {
   cambodia: ['#cfa971', '#c39e66'],
 };
 
-// World-space bounding box for chunked HiDPI static cache
-const WORLD_MIN_X = -1680;
-const WORLD_MIN_Y = -260;
-const CHUNK_COLS = 4;
-const CHUNK_ROWS = 2;
-const CHUNK_W = 680; // 4 * 680 = 2720 -> covers [-1680, +1040]
-const CHUNK_H = 800; // 2 * 800 = 1600 -> covers [-260, +1340]
+// Dynamic world-space chunk grid (supports unlimited map expansion at 60+ FPS)
+const CHUNK_W = 680;
+const CHUNK_H = 800;
+const MAX_CACHED_CHUNKS = 24;
 
 interface WorldChunk {
+  id: string;
   col: number;
   row: number;
   wx: number;
@@ -68,6 +66,7 @@ interface WorldChunk {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   key: string;
+  lastUsed: number;
 }
 
 declare global {
@@ -195,24 +194,43 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const ambient = createAmbientSystem(56, 12, 10, 64);
 
-    // Initialize 4x2 world chunk pool
-    const chunks: WorldChunk[] = [];
-    for (let row = 0; row < CHUNK_ROWS; row++) {
-      for (let col = 0; col < CHUNK_COLS; col++) {
-        const c = document.createElement('canvas');
-        const cctx = c.getContext('2d');
-        if (!cctx) continue;
-        chunks.push({
-          col,
-          row,
-          wx: WORLD_MIN_X + col * CHUNK_W,
-          wy: WORLD_MIN_Y + row * CHUNK_H,
-          canvas: c,
-          ctx: cctx,
-          key: '',
-        });
+    // Sparse dynamic chunk cache (grows seamlessly as new rows expand)
+    const chunkMap = new Map<string, WorldChunk>();
+    const getOrCreateChunk = (col: number, row: number): WorldChunk | null => {
+      const id = `${col},${row}`;
+      const existing = chunkMap.get(id);
+      if (existing) return existing;
+
+      // Evict least-recently-used chunk if cache exceeds cap
+      if (chunkMap.size >= MAX_CACHED_CHUNKS) {
+        let oldestId: string | null = null;
+        let oldestTime = Infinity;
+        for (const [cid, ch] of chunkMap) {
+          if (ch.lastUsed < oldestTime) {
+            oldestTime = ch.lastUsed;
+            oldestId = cid;
+          }
+        }
+        if (oldestId) chunkMap.delete(oldestId);
       }
-    }
+
+      const c = document.createElement('canvas');
+      const cctx = c.getContext('2d');
+      if (!cctx) return null;
+      const created: WorldChunk = {
+        id,
+        col,
+        row,
+        wx: col * CHUNK_W,
+        wy: row * CHUNK_H,
+        canvas: c,
+        ctx: cctx,
+        key: '',
+        lastUsed: performance.now(),
+      };
+      chunkMap.set(id, created);
+      return created;
+    };
 
     // Precompute plot screen positions once (huge speedup during baking)
     const toScreen = (gx: number, gy: number): [number, number] => [(gx - gy) * TILE_W, (gx + gy) * TILE_H];
@@ -439,15 +457,18 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       const inChunk = (sx: number, sy: number, extraH = 0) =>
         sx + TILE_W + 16 >= minX && sx - TILE_W - 16 <= maxX && sy + 40 >= minY && sy - extraH - 40 <= maxY;
 
+      const mapH = getMapHeight(state);
+
       // Pass 1: Ground tiles, roads, rivers, terrain micro-textures
-      for (let diag = 0; diag < MAP_W + MAP_H - 1; diag++) {
-        const xMin = Math.max(0, diag - MAP_H + 1);
+      for (let diag = 0; diag < MAP_W + mapH - 1; diag++) {
+        const xMin = Math.max(0, diag - mapH + 1);
         const xMax = Math.min(diag, MAP_W - 1);
         for (let gx = xMin; gx <= xMax; gx++) {
           const gy = diag - gx;
           const [sx, sy] = toScreen(gx, gy);
           if (!inChunk(sx, sy)) continue;
           const plot = state.plots[gy * MAP_W + gx];
+          if (!plot) continue;
 
           if (plot.kind === 'water') {
             const depth = gy === 28 ? 44 : Math.max(34, 48 - (gx + gy - 45) * 1.4);
@@ -640,12 +661,13 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       }
 
       // Pass 2: Buildings, ownership borders, trees, gov halls
-      for (let diag = 0; diag < MAP_W + MAP_H - 1; diag++) {
-        const xMin = Math.max(0, diag - MAP_H + 1);
+      for (let diag = 0; diag < MAP_W + mapH - 1; diag++) {
+        const xMin = Math.max(0, diag - mapH + 1);
         const xMax = Math.min(diag, MAP_W - 1);
         for (let gx = xMin; gx <= xMax; gx++) {
           const gy = diag - gx;
           const plot = state.plots[gy * MAP_W + gx];
+          if (!plot) continue;
           const [sx, sy] = toScreen(gx, gy);
           const estH = plot.b ? BUILDINGS[plot.b.type].height * (1 + (plot.b.level - 1) * 0.35) : 60;
           if (!inChunk(sx, sy, estH)) continue;
@@ -777,12 +799,15 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
     let cachedIntersections: Array<[number, number]> = [];
     let cachedLandmarkPlots: Plot[] = [];
     let cachedPlotsRef: Plot[] | null = null;
+    let cachedPlotsLen = 0;
 
     const rebuildFastLists = (state: GameState) => {
+      const mapH = getMapHeight(state);
       cachedPlotsRef = state.plots;
+      cachedPlotsLen = state.plots.length;
       cachedGovPlots = state.plots.filter((p) => p.kind === 'gov');
       cachedIntersections = [];
-      for (let gy = 0; gy < MAP_H; gy += 6) {
+      for (let gy = 0; gy < mapH; gy += 6) {
         for (let gx = 0; gx < MAP_W; gx += 6) {
           if (gy !== 28) cachedIntersections.push(toScreen(gx, gy));
         }
@@ -815,7 +840,8 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       const desiredDpr = Math.min(window.devicePixelRatio || 1, preset.maxDpr);
       if (desiredDpr !== lastDpr) resize();
 
-      if (cachedPlotsRef !== state.plots) rebuildFastLists(state);
+      const mapH = getMapHeight(state);
+      if (cachedPlotsRef !== state.plots || cachedPlotsLen !== state.plots.length) rebuildFastLists(state);
 
       // Smooth camera physics (fly-to, damped zoom, inertial pan)
       const cam = camRef.current;
@@ -853,7 +879,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
       // Step living world entities
       if (!reducedMotion) {
-        stepAmbientSystem(ambient, dtSec, state.speed, state.paused || !state.tutorialDone);
+        stepAmbientSystem(ambient, dtSec, state.speed, state.paused || !state.tutorialDone, mapH);
       }
 
       const dpr = lastDpr;
@@ -882,34 +908,41 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         sx + pad >= viewMinX && sx - pad <= viewMaxX && sy + pad >= viewMinY && sy - pad <= viewMaxY;
 
       // 2. Blit visible HiDPI cached world chunks (bake lazily only if dirty!)
-      const chunkKey = `${store.version}:${isNight ? 1 : 0}:${state.heatmap ? 1 : 0}:${store.graphicsQuality}`;
+      const chunkKey = `${store.version}:${state.plots.length}:${isNight ? 1 : 0}:${state.heatmap ? 1 : 0}:${store.graphicsQuality}`;
       let maxPricePerSqm = -1;
 
       screenCtx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * cam.x, dpr * cam.y);
       screenCtx.imageSmoothingEnabled = true;
       screenCtx.imageSmoothingQuality = 'high';
 
-      for (const chunk of chunks) {
-        if (
-          chunk.wx + CHUNK_W < viewMinX ||
-          chunk.wx > viewMaxX ||
-          chunk.wy + CHUNK_H < viewMinY ||
-          chunk.wy > viewMaxY
-        ) {
-          continue;
-        }
-        if (chunk.key !== chunkKey) {
-          if (maxPricePerSqm < 0) {
-            maxPricePerSqm = 1;
-            if (state.heatmap) {
-              for (const p of state.plots) {
-                if (p.kind === 'land') maxPricePerSqm = Math.max(maxPricePerSqm, getLandPrice(state, p) / p.area);
+      const worldMinX = -mapH * TILE_W - 120;
+      const worldMaxX = MAP_W * TILE_W + 140;
+      const worldMinY = -260;
+      const worldMaxY = (MAP_W + mapH) * TILE_H + 80;
+
+      const colStart = Math.floor(Math.max(viewMinX, worldMinX) / CHUNK_W);
+      const colEnd = Math.floor(Math.min(viewMaxX, worldMaxX) / CHUNK_W);
+      const rowStart = Math.floor(Math.max(viewMinY, worldMinY) / CHUNK_H);
+      const rowEnd = Math.floor(Math.min(viewMaxY, worldMaxY) / CHUNK_H);
+
+      for (let row = rowStart; row <= rowEnd; row++) {
+        for (let col = colStart; col <= colEnd; col++) {
+          const chunk = getOrCreateChunk(col, row);
+          if (!chunk) continue;
+          chunk.lastUsed = now;
+          if (chunk.key !== chunkKey) {
+            if (maxPricePerSqm < 0) {
+              maxPricePerSqm = 1;
+              if (state.heatmap) {
+                for (const p of state.plots) {
+                  if (p.kind === 'land') maxPricePerSqm = Math.max(maxPricePerSqm, getLandPrice(state, p) / p.area);
+                }
               }
             }
+            bakeChunk(chunk, state, isNight, maxPricePerSqm, preset.bakeScale, preset.textures, chunkKey);
           }
-          bakeChunk(chunk, state, isNight, maxPricePerSqm, preset.bakeScale, preset.textures, chunkKey);
+          screenCtx.drawImage(chunk.canvas, chunk.wx, chunk.wy, CHUNK_W, CHUNK_H);
         }
-        screenCtx.drawImage(chunk.canvas, chunk.wx, chunk.wy, CHUNK_W, CHUNK_H);
       }
 
       // 3. Dynamic animated layer (water glints, waving flags, cranes, vehicles, boats, selection/hover)
@@ -1214,8 +1247,9 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       if (!p) {
         if (e.pointerType === 'mouse') {
           const { gx, gy, mx, my } = pickTileAt(e.clientX, e.clientY);
+          const curMapH = store.s ? getMapHeight(store.s) : MAP_H;
           hoverRef.current = {
-            plotId: gx >= 0 && gy >= 0 && gx < MAP_W && gy < MAP_H ? gy * MAP_W + gx : null,
+            plotId: gx >= 0 && gy >= 0 && gx < MAP_W && gy < curMapH ? gy * MAP_W + gx : null,
             palace: isPalaceCoord(gx, gy),
             mx,
             my,
@@ -1264,7 +1298,8 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
           onPalaceTapRef.current();
           return;
         }
-        onTapRef.current(gx >= 0 && gy >= 0 && gx < MAP_W && gy < MAP_H ? gy * MAP_W + gx : null);
+        const curMapH = store.s ? getMapHeight(store.s) : MAP_H;
+        onTapRef.current(gx >= 0 && gy >= 0 && gx < MAP_W && gy < curMapH ? gy * MAP_W + gx : null);
       } else {
         // Clamp inertia speed so flicking feels crisp, not chaotic
         camRef.current.vx = Math.max(-1800, Math.min(1800, camRef.current.vx * 0.65));

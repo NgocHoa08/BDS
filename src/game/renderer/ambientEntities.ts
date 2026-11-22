@@ -128,13 +128,19 @@ export function createAmbientSystem(maxVehicles = 56, maxBoats = 12, maxClouds =
   return { vehicles, boats, clouds, leaves };
 }
 
-export function stepAmbientSystem(sys: AmbientSystem, dtSec: number, simSpeed: number, paused: boolean): void {
+export function stepAmbientSystem(
+  sys: AmbientSystem,
+  dtSec: number,
+  simSpeed: number,
+  paused: boolean,
+  mapH = MAP_H
+): void {
   const factor = paused ? 0.25 : Math.min(2.2, simSpeed);
   const dt = dtSec * factor;
 
   for (const v of sys.vehicles) {
     v.pos += v.dir * v.speed * dt;
-    const limit = v.axis === 'x' ? MAP_W - 0.5 : MAP_H - 0.5;
+    const limit = v.axis === 'x' ? MAP_W - 0.5 : mapH - 0.5;
     if (v.pos > limit) v.pos = 0.5;
     else if (v.pos < 0.5) v.pos = limit;
   }

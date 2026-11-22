@@ -338,7 +338,7 @@ export async function syncPlayerScore(state: GameState, force = false): Promise<
       p_player_name: name,
       p_net_worth: netWorth,
       p_cash: cash,
-      p_plots_count: plotsCount,
+      p_plots_count: Math.min(1400, plotsCount),
       p_day: state.day,
       p_title: title,
       p_missions_done: missionsDone,

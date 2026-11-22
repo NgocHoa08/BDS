@@ -20,7 +20,9 @@ import {
   demolishBuilding,
   formatMoney,
   getDailyIncome,
+  getDaysUntilNextExpansion,
   getLandPrice,
+  getMapHeight,
   getNpcById,
   getOwnedPlots,
   getPlotTotalValue,
@@ -159,6 +161,15 @@ export function PlotPanel({
 
         {p.gov === 'dangky' && (
           <div className="mt-3">
+            <StatRow k="Quy mô bản đồ" v={`${s.plots.length.toLocaleString('vi-VN')} ô (28×${getMapHeight(s)})`} />
+            <StatRow
+              k="Mở rộng tiếp theo"
+              v={
+                getDaysUntilNextExpansion(s) !== null
+                  ? `Sau ${getDaysUntilNextExpansion(s)} ngày (+56 ô)`
+                  : 'Đã đạt tối đa'
+              }
+            />
             <StatRow k="Lô đất trống" v={s.plots.filter((pl) => pl.kind === 'land' && !pl.owner).length} />
             <StatRow k="Lô của bạn" v={getOwnedPlots(s).length} />
           </div>

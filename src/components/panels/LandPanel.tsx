@@ -1,6 +1,8 @@
-import { BUILDINGS, REGION_NAMES } from '../../game/constants';
+import { BUILDINGS, MAP_W, MAX_MAP_H, REGION_NAMES } from '../../game/constants';
 import {
   formatMoney,
+  getDaysUntilNextExpansion,
+  getMapHeight,
   getNpcById,
   getOwnedPlots,
   getPlotTotalValue,
@@ -11,9 +13,26 @@ import type { GameState, RegionId } from '../../game/types';
 
 export function LandPanel({ s, onPick }: { s: GameState; onPick: (plotId: number) => void }) {
   const owned = getOwnedPlots(s);
+  const mapH = getMapHeight(s);
+  const nextExp = getDaysUntilNextExpansion(s);
+  const freeCount = s.plots.filter((p) => p.kind === 'land' && !p.owner).length;
 
   return (
     <div className="space-y-3">
+      {/* Dynamic Map Expansion Status */}
+      <div className="rounded-xl border border-border bg-secondary/70 p-2.5 text-xs">
+        <div className="flex items-center justify-between gap-2 font-bold">
+          <span>
+            🗺 Quy mô bản đồ: {MAP_W}×{mapH} ({s.plots.length.toLocaleString('vi-VN')} ô)
+          </span>
+          <span className="text-primary">{freeCount} ô trống</span>
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {nextExp !== null
+            ? `Mở rộng thêm +56 ô phía Nam sau ${nextExp} ngày (tối đa ${MAP_W}×${MAX_MAP_H}) · Lấn biển mỗi 20 ngày.`
+            : 'Đã đạt quy mô mở rộng tối đa!'}
+        </div>
+      </div>
       {s.offers.length > 0 && (
         <div>
           <h3 className="mb-1 text-sm font-bold">📩 Lời đề nghị mua</h3>

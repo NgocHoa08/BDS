@@ -14,6 +14,8 @@ export const BILLION = 1e9;
 
 export const MAP_W = 28;
 export const MAP_H = 50;
+export const MAX_MAP_H = 120;
+export const EXPANSION_ROWS_STEP = 2;
 export const PLOT_COUNT = MAP_W * MAP_H;
 
 export const DOMESTIC_REGIONS: DomesticRegionId[] = ['city', 'country', 'sea', 'mountain'];

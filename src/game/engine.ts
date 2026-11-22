@@ -10,6 +10,7 @@ import {
   ETEX_CARD_FEE,
   ETEX_MIN_FEE,
   ETEX_SWIPE_RATE,
+  EXPANSION_ROWS_STEP,
   FOREIGN_GOV_MAP,
   FOREIGN_GOVS,
   FOREIGN_REGIONS,
@@ -20,6 +21,7 @@ import {
   LANDMARK_PLACEMENTS,
   MAP_H,
   MAP_W,
+  MAX_MAP_H,
   MILLION,
   MISSIONS,
   NPC_NAMES,
@@ -293,14 +295,90 @@ export function createInitialGameState(): GameState {
   return state;
 }
 
+export function getMapHeight(state: GameState): number {
+  return Math.max(MAP_H, Math.floor(state.plots.length / MAP_W));
+}
+
+export function getDaysUntilNextExpansion(state: GameState): number | null {
+  if (getMapHeight(state) >= MAX_MAP_H) return null;
+  if (state.day < 15) return 15 - state.day;
+  const rem = state.day % 30;
+  return rem === 0 ? 30 : 30 - rem;
+}
+
+export function expandWorldRows(state: GameState, rowsToAdd = EXPANSION_ROWS_STEP): number {
+  const curH = getMapHeight(state);
+  const actualRows = Math.min(rowsToAdd, MAX_MAP_H - curH);
+  if (actualRows <= 0) return 0;
+
+  let addedLand = 0;
+  for (let dy = 0; dy < actualRows; dy++) {
+    const y = curH + dy;
+    const rand = createRng(20261110 + y * 97 + state.day * 13);
+    for (let x = 0; x < MAP_W; x++) {
+      const region = getRegionAt(x, y);
+      const kind: Plot['kind'] = x % 6 === 0 || y % 6 === 0 ? 'road' : 'land';
+      const [minArea, maxArea] = AREA_RANGES[region];
+      const plot: Plot = {
+        id: y * MAP_W + x,
+        x,
+        y,
+        kind,
+        region,
+        area: Math.round(minArea + rand() * (maxArea - minArea)),
+        mod: 0.85 + rand() * 0.45,
+        owner: null,
+        b: null,
+        forSale: false,
+      };
+      // Fresh expansion zones stay mostly open (~85% empty) for players to claim
+      if (kind === 'land') {
+        addedLand += 1;
+        if (rand() < 0.14 && state.npcs.length) {
+          plot.owner = state.npcs[Math.floor(rand() * state.npcs.length)].id;
+          plot.forSale = rand() < 0.35;
+        }
+      }
+      state.plots.push(plot);
+    }
+  }
+  return addedLand;
+}
+
+export function reclaimSeaLand(state: GameState, count = 3): number {
+  const candidates = state.plots.filter(
+    (p) =>
+      p.kind === 'water' &&
+      p.region === 'sea' &&
+      p.y < 28 &&
+      getNeighbors(state, p, 1).some((n) => n.kind === 'land' || n.kind === 'road')
+  );
+  if (!candidates.length) return 0;
+
+  // Pick shoreline tiles closest to inland first for natural coastal reclamation
+  candidates.sort((a, b) => a.x + a.y - (b.x + b.y));
+  const reclaimed = candidates.slice(0, count);
+  const rand = createRng(20261201 + state.day * 31);
+  for (const p of reclaimed) {
+    p.kind = p.x % 6 === 0 || p.y % 6 === 0 ? 'road' : 'land';
+    p.owner = null;
+    p.b = null;
+    p.forSale = false;
+    p.area = Math.round(180 + rand() * 240);
+    p.mod = 0.95 + rand() * 0.35;
+  }
+  return reclaimed.filter((p) => p.kind === 'land').length;
+}
+
 export function getNeighbors(state: GameState, plot: Plot, radius = 1): Plot[] {
+  const mapH = getMapHeight(state);
   const out: Plot[] = [];
   for (let dy = -radius; dy <= radius; dy++) {
     for (let dx = -radius; dx <= radius; dx++) {
       if (dx === 0 && dy === 0) continue;
       const nx = plot.x + dx;
       const ny = plot.y + dy;
-      if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H) {
+      if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < mapH) {
         const p = state.plots[ny * MAP_W + nx];
         if (p) out.push(p);
       }
@@ -1201,6 +1279,26 @@ export function stepDay(state: GameState): DayTickResult {
     addLog(state, `Nộp thuế tháng: thuế đất ${formatMoney(landTax)}, thuế kinh doanh ${formatMoney(bizTax)}.`);
     result.events.push(`Đã nộp thuế ${formatMoney(landTax + bizTax)}`);
     state.month = { revenue: 0, expense: 0, tax: 0 };
+  }
+
+  // Dynamic map expansion: the longer you play, the more land unlocks!
+  if ((state.day === 15 || state.day % 30 === 0) && getMapHeight(state) < MAX_MAP_H) {
+    const added = expandWorldRows(state, EXPANSION_ROWS_STEP);
+    if (added > 0) {
+      const msg = `🗺 Mở rộng quy hoạch: khai phá thêm ${added} lô đất mới về phía Nam!`;
+      addLog(state, msg);
+      result.events.push(msg);
+    }
+  }
+
+  // Coastal land reclamation every 20 days in Vùng biển
+  if (state.day % 20 === 0) {
+    const reclaimed = reclaimSeaLand(state, 3);
+    if (reclaimed > 0) {
+      const msg = `🏝 Lấn biển Vùng biển: mở thêm ${reclaimed} lô đất ven biển mới!`;
+      addLog(state, msg);
+      result.events.push(msg);
+    }
   }
 
   state.history.push({ day: state.day, worth: getNetWorth(state), cash: state.cash });
