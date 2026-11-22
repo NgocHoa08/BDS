@@ -43,6 +43,7 @@ import { CityCanvas } from './game/renderer/CityCanvas';
 import {
   disposeLeaderboard,
   initLeaderboard,
+  saveCloudState,
   syncPlayerScore,
   useLeaderboard,
 } from './game/leaderboard';
@@ -89,11 +90,16 @@ export default function App() {
     }, 3500);
   }, []);
 
-  // Main simulation loop & persistence + Supabase Realtime leaderboard sync
+  // Main simulation loop & persistence + Supabase Realtime leaderboard & Cloud Save sync
   useEffect(() => {
     store.s = loadGameState() ?? createInitialGameState();
     notifyStore();
-    initLeaderboard(store.s).catch(() => {});
+    initLeaderboard(store.s, (cloudState) => {
+      store.s = cloudState;
+      store.selected = null;
+      notifyStore();
+      pushToast('☁️ Đã tự động tải tiến trình Cloud của bạn!');
+    }).catch(() => {});
 
     let last = performance.now();
     let rafId = 0;
@@ -116,6 +122,7 @@ export default function App() {
         if (dayTicks.length) {
           saveGameState(s);
           syncPlayerScore(s).catch(() => {});
+          saveCloudState(s).catch(() => {});
         }
         const curHour = Math.floor(s.hour);
         if (curHour !== lastHour) {
@@ -132,6 +139,7 @@ export default function App() {
     const syncInterval = window.setInterval(() => {
       if (store.s && store.s.tutorialDone) {
         syncPlayerScore(store.s).catch(() => {});
+        saveCloudState(store.s).catch(() => {});
       }
     }, 20000);
 
@@ -139,6 +147,7 @@ export default function App() {
       if (store.s) {
         saveGameState(store.s);
         syncPlayerScore(store.s, true).catch(() => {});
+        saveCloudState(store.s, true).catch(() => {});
       }
     };
     window.addEventListener('pagehide', onHide);
@@ -479,7 +488,9 @@ export default function App() {
             />
           )}
           {panel === 'stats' && <StatsPanel s={s} />}
-          {panel === 'leaderboard' && <LeaderboardPanel s={s} onToast={pushToast} />}
+          {panel === 'leaderboard' && (
+            <LeaderboardPanel s={s} onToast={pushToast} onOpenSettings={() => setPanel('settings')} />
+          )}
           {panel === 'settings' && (
             <SettingsPanel
               s={s}

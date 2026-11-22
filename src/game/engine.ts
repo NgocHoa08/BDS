@@ -1201,15 +1201,15 @@ export function saveGameState(state: GameState): void {
   }
 }
 
-export function loadGameState(): GameState | null {
+export function hydrateGameState(rawObj: unknown): GameState | null {
   try {
-    const raw = localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as GameState;
-    if (parsed.v !== 1) return null;
+    if (!rawObj || typeof rawObj !== 'object') return null;
+    const parsed = rawObj as GameState;
+    if (parsed.v !== 1 || !Array.isArray(parsed.plots)) return null;
     parsed.investments ??= [];
     parsed.investmentSeq ??= 1;
     parsed.speed = 1;
+    parsed.nego = null;
     parsed.visas ??= [];
     parsed.etex ??= false;
     parsed.claimedMissions ??= [];
@@ -1219,6 +1219,16 @@ export function loadGameState(): GameState | null {
       parsed.tetMode = 'calendar';
     }
     return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function loadGameState(): GameState | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY);
+    if (!raw) return null;
+    return hydrateGameState(JSON.parse(raw));
   } catch {
     return null;
   }

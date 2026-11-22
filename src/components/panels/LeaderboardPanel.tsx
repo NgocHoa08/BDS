@@ -24,9 +24,11 @@ function formatRelativeTime(iso: string): string {
 export function LeaderboardPanel({
   s,
   onToast,
+  onOpenSettings,
 }: {
   s: GameState;
   onToast: (msg: string) => void;
+  onOpenSettings: () => void;
 }) {
   const lb = useLeaderboard();
   const [nameInput, setNameInput] = useState(lb.playerName);
@@ -144,6 +146,15 @@ export function LeaderboardPanel({
             <Save size={13} /> Đổi tên
           </Button>
         </div>
+
+        {lb.configured && lb.isAnonymous && (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-background/50 px-2.5 py-1.5 text-[11px]">
+            <span className="text-muted-foreground">☁️ Muốn đổi thiết bị không mất điểm?</span>
+            <button onClick={onOpenSettings} className="shrink-0 font-bold text-primary hover:underline">
+              Liên kết Cloud →
+            </button>
+          </div>
+        )}
       </section>
 
       {lb.error && (
