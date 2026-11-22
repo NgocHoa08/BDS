@@ -272,32 +272,35 @@ export default function App() {
     <div className="relative h-dvh w-full overflow-hidden select-none bg-background text-foreground">
       <CityCanvas onTap={handlePlotTap} onPalaceTap={() => setPanel('palace')} fpsRef={fpsRef} />
 
-      {/* Unified Top HUD Stack (never overlaps on notched or narrow phones) */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-1.5 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        <div className="panel pointer-events-auto rounded-2xl px-2.5 py-2 sm:px-3">
-          <div className="flex items-center justify-between gap-2">
+      {/* Unified Top HUD Stack (adapts to ultra-compact single-row in mobile landscape!) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-1.5 px-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))] [@media(max-height:520px)]:gap-1 [@media(max-height:520px)]:pt-1.5">
+        <div className="panel pointer-events-auto flex flex-col gap-1.5 rounded-2xl px-2.5 py-2 sm:px-3 [@media(max-height:520px)]:flex-row [@media(max-height:520px)]:items-center [@media(max-height:520px)]:justify-between [@media(max-height:520px)]:gap-2 [@media(max-height:520px)]:py-1.5">
+          <div className="flex items-center justify-between gap-2 [@media(max-height:520px)]:gap-3">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <BrandLogo size="sm" compactMobile className="border-r border-border pr-2 sm:pr-3" />
               <div className="min-w-0">
-                <div className="text-[9px] uppercase tracking-wider text-muted-foreground sm:text-[10px] sm:tracking-widest">
+                <div className="text-[9px] uppercase tracking-wider text-muted-foreground sm:text-[10px] sm:tracking-widest [@media(max-height:520px)]:hidden">
                   Tiền mặt
                 </div>
-                <div className="text-gold truncate whitespace-nowrap text-base font-black leading-tight sm:text-lg">
+                <div className="text-gold truncate whitespace-nowrap text-base font-black leading-tight sm:text-lg [@media(max-height:520px)]:text-sm">
                   {formatMoney(s.cash)}
                 </div>
               </div>
             </div>
-            <div className="min-w-0 text-right">
-              <div className="text-[9px] uppercase tracking-wider text-muted-foreground sm:text-[10px] sm:tracking-widest">
+            <div className="min-w-0 text-right [@media(max-height:520px)]:border-l [@media(max-height:520px)]:border-border [@media(max-height:520px)]:pl-2.5 [@media(max-height:520px)]:text-left">
+              <div className="text-[9px] uppercase tracking-wider text-muted-foreground sm:text-[10px] sm:tracking-widest [@media(max-height:520px)]:hidden">
                 Tài sản ròng
               </div>
-              <div className="truncate whitespace-nowrap text-sm font-bold leading-tight text-success sm:text-base">
+              <div className="truncate whitespace-nowrap text-sm font-bold leading-tight text-success sm:text-base [@media(max-height:520px)]:text-xs">
+                <span className="hidden text-[10px] font-normal text-muted-foreground [@media(max-height:520px)]:inline">
+                  Ròng{' '}
+                </span>
                 {formatMoney(netWorth)}
               </div>
             </div>
           </div>
 
-          <div className="mt-1.5 flex items-center justify-between gap-1.5 text-[11px] sm:gap-2 sm:text-xs">
+          <div className="flex items-center justify-between gap-1.5 text-[11px] sm:gap-2 sm:text-xs">
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="inline-flex items-center gap-1 truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5">
                 <span>🍂</span>
@@ -307,7 +310,7 @@ export default function App() {
                 </span>
                 <span>·</span>
                 <span>N{day}</span>
-                <span className="hidden min-[360px]:inline">
+                <span className="hidden min-[360px]:inline [@media(max-height:520px)]:hidden lg:[@media(max-height:520px)]:inline">
                   · T{((monthIdx - 1) % 12) + 1} · Năm {year}
                 </span>
               </span>
@@ -315,7 +318,7 @@ export default function App() {
                 <button
                   onClick={() => setPanel('settings')}
                   title="Cấu hình đồ hoạ & FPS"
-                  className="hidden shrink-0 items-center gap-1 rounded-full border border-border bg-background/50 px-2 py-0.5 text-[10px] font-semibold text-success md:inline-flex"
+                  className="hidden shrink-0 items-center gap-1 rounded-full border border-border bg-background/50 px-2 py-0.5 text-[10px] font-semibold text-success md:inline-flex [@media(max-height:520px)]:hidden"
                 >
                   <span ref={fpsRef}>60 FPS</span>
                   <span className="text-muted-foreground">· {GRAPHICS_PRESETS[store.graphicsQuality].label}</span>
@@ -370,7 +373,7 @@ export default function App() {
           <Button
             variant="secondary"
             size="sm"
-            className="h-8 border border-border px-2.5 text-xs"
+            className="h-8 border border-border px-2.5 text-xs [@media(max-height:520px)]:h-7 [@media(max-height:520px)]:px-2 [@media(max-height:520px)]:text-[11px]"
             onClick={() => setPanel('city')}
           >
             <Trophy size={14} /> Nhiệm vụ {s.claimedMissions.length}/{MISSIONS.length}
@@ -379,7 +382,7 @@ export default function App() {
             aria-label="Bảng xếp hạng"
             variant="secondary"
             size="sm"
-            className="h-8 border border-border px-2.5 text-xs"
+            className="h-8 border border-border px-2.5 text-xs [@media(max-height:520px)]:h-7 [@media(max-height:520px)]:px-2 [@media(max-height:520px)]:text-[11px]"
             onClick={() => setPanel('leaderboard')}
           >
             <Crown size={14} className="text-primary" />
@@ -389,12 +392,12 @@ export default function App() {
             )}
           </Button>
           {s.auction && (
-            <button onClick={notifyStore} className="btn-gold animate-pulse px-2.5 py-1.5 text-xs">
+            <button onClick={notifyStore} className="btn-gold animate-pulse px-2.5 py-1 text-xs">
               🔨 Đấu giá #{s.auction.plotId}
             </button>
           )}
           {s.offers.length > 0 && (
-            <button onClick={() => setPanel('dat')} className="btn-ghost px-2.5 py-1.5 text-xs">
+            <button onClick={() => setPanel('dat')} className="btn-ghost px-2.5 py-1 text-xs">
               📩 {s.offers.length} đề nghị mua
             </button>
           )}
@@ -415,23 +418,23 @@ export default function App() {
         )}
       </div>
 
-      {/* Right floating toolbar (centered vertically) */}
-      <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-2">
+      {/* Right floating toolbar (compact 2x2 grid in landscape so it never collides!) */}
+      <div className="absolute right-[max(0.5rem,env(safe-area-inset-right))] top-1/2 z-10 flex -translate-y-1/2 flex-col gap-2 [@media(max-height:520px)]:grid [@media(max-height:520px)]:grid-cols-2 [@media(max-height:520px)]:gap-1.5">
         <button
           aria-label="Phóng to"
           title="Phóng to"
           onClick={() => window.__zoom?.(1.25)}
-          className="panel rounded-full p-2 hover:brightness-110"
+          className="panel rounded-full p-2 hover:brightness-110 [@media(max-height:520px)]:p-1.5"
         >
-          <Plus size={18} />
+          <Plus size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
         </button>
         <button
           aria-label="Thu nhỏ"
           title="Thu nhỏ"
           onClick={() => window.__zoom?.(0.8)}
-          className="panel rounded-full p-2 hover:brightness-110"
+          className="panel rounded-full p-2 hover:brightness-110 [@media(max-height:520px)]:p-1.5"
         >
-          <Minus size={18} />
+          <Minus size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
         </button>
         <button
           aria-label="Bản đồ giá"
@@ -440,34 +443,36 @@ export default function App() {
             s.heatmap = !s.heatmap;
             notifyStore();
           }}
-          className={`panel rounded-full p-2 hover:brightness-110 ${s.heatmap ? 'text-primary' : ''}`}
+          className={`panel rounded-full p-2 hover:brightness-110 [@media(max-height:520px)]:p-1.5 ${
+            s.heatmap ? 'text-primary' : ''
+          }`}
         >
-          <MapIcon size={18} />
+          <MapIcon size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
         </button>
         <Button
           aria-label="Đầu tư và gọi vốn"
           title="Đầu tư và gọi vốn"
           size="icon"
           variant="secondary"
-          className="rounded-full border border-border"
+          className="rounded-full border border-border [@media(max-height:520px)]:h-8 [@media(max-height:520px)]:w-8"
           onClick={() => setPanel('invest')}
         >
-          <HandCoins size={18} />
+          <HandCoins size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
         </Button>
       </div>
 
-      {/* Bottom Navigation (crisp spacing even on 360px phones) */}
-      <nav className="absolute inset-x-0 bottom-0 z-10 p-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-2">
-        <div className="panel grid grid-cols-6 gap-0.5 rounded-2xl p-1">
+      {/* Bottom Navigation (compact horizontal row in mobile landscape!) */}
+      <nav className="absolute inset-x-0 bottom-0 z-10 px-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 sm:p-2">
+        <div className="panel grid grid-cols-6 gap-0.5 rounded-2xl p-1 [@media(max-height:520px)]:py-0.5">
           {NAV_ITEMS.map(([key, Icon, label]) => (
             <button
               key={key}
               onClick={() => setPanel(panel === key ? null : key)}
-              className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0 py-1.5 text-[9px] font-semibold leading-tight tracking-tight transition-colors sm:px-0.5 sm:text-[11px] sm:tracking-normal ${
+              className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0 py-1.5 text-[9px] font-semibold leading-tight tracking-tight transition-colors sm:px-0.5 sm:text-[11px] sm:tracking-normal [@media(max-height:520px)]:flex-row [@media(max-height:520px)]:gap-1.5 [@media(max-height:520px)]:py-1.5 [@media(max-height:520px)]:text-[11px] ${
                 panel === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Icon size={18} className="shrink-0 sm:h-5 sm:w-5" />
+              <Icon size={18} className="shrink-0 sm:h-5 sm:w-5 [@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
               <span className="max-w-full whitespace-nowrap">{label}</span>
             </button>
           ))}

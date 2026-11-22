@@ -61,9 +61,9 @@ export function BottomSheet({
   onClose: () => void;
 }) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center">
-      <div className="panel pointer-events-auto flex max-h-[78dvh] w-full max-w-2xl animate-pop flex-col rounded-t-3xl sm:max-h-[72dvh]">
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-[env(safe-area-inset-left)]">
+      <div className="panel pointer-events-auto flex max-h-[78dvh] w-full max-w-2xl animate-pop flex-col rounded-t-3xl sm:max-h-[72dvh] [@media(max-height:520px)]:max-h-[86dvh] [@media(max-height:520px)]:max-w-xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 [@media(max-height:520px)]:py-2">
           <h2 className="text-gold truncate pr-2 text-base font-black sm:text-lg">{title}</h2>
           <button
             aria-label="Đóng"
@@ -73,7 +73,7 @@ export function BottomSheet({
             <X size={18} />
           </button>
         </div>
-        <div className="overscroll-contain overflow-y-auto px-4 py-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="overscroll-contain overflow-y-auto px-4 py-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] [@media(max-height:520px)]:py-2">
           {children}
         </div>
       </div>

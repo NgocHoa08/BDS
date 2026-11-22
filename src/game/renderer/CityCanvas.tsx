@@ -793,6 +793,10 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
     resize();
     window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', resize);
+    window.visualViewport?.addEventListener('resize', resize);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
+    ro?.observe(canvas);
 
     // Pre-collect gov plots & road intersections for fast animated overlay
     let cachedGovPlots: Plot[] = [];
@@ -838,7 +842,11 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
       const preset = GRAPHICS_PRESETS[store.graphicsQuality];
       const desiredDpr = Math.min(window.devicePixelRatio || 1, preset.maxDpr);
-      if (desiredDpr !== lastDpr) resize();
+      const expectW = Math.max(1, Math.round(canvas.clientWidth * desiredDpr));
+      const expectH = Math.max(1, Math.round(canvas.clientHeight * desiredDpr));
+      if (desiredDpr !== lastDpr || canvas.width !== expectW || canvas.height !== expectH) {
+        resize();
+      }
 
       const mapH = getMapHeight(state);
       if (cachedPlotsRef !== state.plots || cachedPlotsLen !== state.plots.length) rebuildFastLists(state);
@@ -1360,7 +1368,10 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
     return () => {
       cancelAnimationFrame(rafId);
+      ro?.disconnect();
       window.removeEventListener('resize', resize);
+      window.removeEventListener('orientationchange', resize);
+      window.visualViewport?.removeEventListener('resize', resize);
       window.removeEventListener('city-focus', onCityFocus);
       window.removeEventListener('palace-focus', onPalaceFocus);
       canvas.removeEventListener('wheel', onWheel);
