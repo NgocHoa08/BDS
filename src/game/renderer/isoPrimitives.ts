@@ -367,23 +367,32 @@ export function createIsoHelpers(
       return;
     }
 
-    // Multi-layered lush tropical canopy
+    // Multi-layered autumn tropical canopy (golden yellow / burnt orange / maple red / sage)
+    const autumnHues: Array<[string, string, string]> = [
+      ['#9a5520', '#d98a2b', '#f2be54'], // golden yellow
+      ['#8c3e1c', '#cf652b', '#ed964a'], // burnt orange
+      ['#782a20', '#b84232', '#df6d50'], // autumn maple red
+      ['#36522e', '#5d7c42', '#95a857'], // warm autumn sage
+    ];
+    const idx = Math.abs(Math.round(x * 7 + y * 13)) % autumnHues.length;
+    const [deepCol, midCol, topCol] = autumnHues[idx];
+
     ctx.fillStyle = pal.wood ?? pal.door;
     ctx.fillRect(x - 0.8 * scale, y - 7.5 * scale, 1.6 * scale, 7.5 * scale);
-    ctx.fillStyle = 'rgba(20, 58, 36, 0.9)';
+    ctx.fillStyle = deepCol;
     ctx.beginPath();
     ctx.ellipse(x + 1.1 * scale, y - 8.2 * scale, 5.2 * scale, 5.8 * scale, 0, 0, 7);
     ctx.fill();
-    ctx.fillStyle = pal.foliage;
+    ctx.fillStyle = midCol;
     ctx.beginPath();
     ctx.ellipse(x, y - 9.4 * scale, 5.2 * scale, 6.2 * scale, 0, 0, 7);
     ctx.fill();
-    ctx.fillStyle = pal.leaf;
+    ctx.fillStyle = topCol;
     ctx.beginPath();
     ctx.ellipse(x - 1.8 * scale, y - 11.4 * scale, 3.2 * scale, 3.8 * scale, -0.3, 0, 7);
     ctx.fill();
     // Sunlit crown dot
-    ctx.fillStyle = 'rgba(225, 255, 190, 0.35)';
+    ctx.fillStyle = 'rgba(255, 240, 195, 0.42)';
     ctx.beginPath();
     ctx.ellipse(x - 2.3 * scale, y - 12.6 * scale, 1.5 * scale, 1.8 * scale, -0.3, 0, 7);
     ctx.fill();

@@ -973,13 +973,19 @@ export function drawStandardBuilding(
     ctx.fillStyle = pal.wood;
     ctx.fillRect(tx - 0.6, ty - 6 * sc, 1.2, 6 * sc);
     if (region === 'mountain') {
-      ctx.fillStyle = pal.foliage;
+      const mSets: Array<[string, string]> = [
+        ['#cc7a29', '#edb24c'],
+        ['#b84b34', '#df764e'],
+        ['#5a7840', '#96a852'],
+      ];
+      const [mc0, mc1] = mSets[Math.abs(Math.round(tx + ty)) % mSets.length];
+      ctx.fillStyle = mc0;
       ctx.beginPath();
       ctx.moveTo(tx, ty - 17 * sc);
       ctx.lineTo(tx + 5 * sc, ty - 4 * sc);
       ctx.lineTo(tx - 5 * sc, ty - 4 * sc);
       ctx.fill();
-      ctx.fillStyle = pal.leaf;
+      ctx.fillStyle = mc1;
       ctx.beginPath();
       ctx.moveTo(tx, ty - 17 * sc);
       ctx.lineTo(tx + 3.2 * sc, ty - 9 * sc);
@@ -999,11 +1005,18 @@ export function drawStandardBuilding(
       ctx.stroke();
       return;
     }
-    ctx.fillStyle = pal.foliage;
+    const ySets: Array<[string, string]> = [
+      ['#dd8e2e', '#f5c358'],
+      ['#ca5f2b', '#eb8f48'],
+      ['#ba4232', '#e06c50'],
+      ['#6f8a42', '#a8b556'],
+    ];
+    const [yc0, yc1] = ySets[Math.abs(Math.round(tx * 3 + ty)) % ySets.length];
+    ctx.fillStyle = yc0;
     ctx.beginPath();
     ctx.ellipse(tx, ty - 8 * sc, 4.5 * sc, 5 * sc, 0, 0, 7);
     ctx.fill();
-    ctx.fillStyle = pal.leaf;
+    ctx.fillStyle = yc1;
     ctx.beginPath();
     ctx.ellipse(tx - 1.4 * sc, ty - 9.5 * sc, 2.4 * sc, 2.8 * sc, 0, 0, 7);
     ctx.fill();

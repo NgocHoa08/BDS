@@ -19,6 +19,7 @@ import {
   drawAmbientBoats,
   drawAmbientClouds,
   drawAmbientVehicles,
+  drawFallingAutumnLeaves,
   stepAmbientSystem,
 } from './ambientEntities';
 import {
@@ -41,14 +42,14 @@ import {
 } from './isoPrimitives';
 
 const GROUND_COLORS: Record<RegionId, [string, string]> = {
-  city: ['#cbc5b7', '#bfb8a9'],
-  country: ['#8dc056', '#82b44d'],
-  sea: ['#eddba6', '#e4d097'],
-  mountain: ['#6d9a52', '#638f4a'],
-  china: ['#cfc1b0', '#c4b5a3'],
-  laos: ['#9cc166', '#91b65c'],
-  thailand: ['#d8cba9', '#cdbf9c'],
-  cambodia: ['#cbb47b', '#c0a970'],
+  city: ['#d1c6b4', '#c5b9a6'],
+  country: ['#c2b454', '#b6a749'],
+  sea: ['#edd8a3', '#e4cd94'],
+  mountain: ['#828f4e', '#768345'],
+  china: ['#d3c2ae', '#c8b6a1'],
+  laos: ['#b5b459', '#a9a84f'],
+  thailand: ['#dccaa4', '#d1be97'],
+  cambodia: ['#cfa971', '#c39e66'],
 };
 
 // World-space bounding box for chunked HiDPI static cache
@@ -86,21 +87,21 @@ function lerpRgb(c1: [number, number, number], c2: [number, number, number], t: 
   )})`;
 }
 
-// Continuous 24h tropical sky top/bottom colors + ambient tint
+// Continuous 24h Autumn sky top/bottom colors + warm golden autumn haze
 function getSkyAtmosphere(hour: number): {
   top: string;
   bottom: string;
   nightFactor: number;
   goldenFactor: number;
 } {
-  const NIGHT_T: [number, number, number] = [16, 26, 56];
-  const NIGHT_B: [number, number, number] = [30, 46, 86];
-  const DAWN_T: [number, number, number] = [92, 118, 178];
-  const DAWN_B: [number, number, number] = [235, 176, 136];
-  const DAY_T: [number, number, number] = [115, 186, 232];
-  const DAY_B: [number, number, number] = [182, 224, 246];
-  const DUSK_T: [number, number, number] = [82, 92, 152];
-  const DUSK_B: [number, number, number] = [228, 142, 108];
+  const NIGHT_T: [number, number, number] = [20, 26, 54];
+  const NIGHT_B: [number, number, number] = [38, 46, 78];
+  const DAWN_T: [number, number, number] = [132, 126, 168];
+  const DAWN_B: [number, number, number] = [245, 192, 146];
+  const DAY_T: [number, number, number] = [148, 186, 214];
+  const DAY_B: [number, number, number] = [238, 222, 188];
+  const DUSK_T: [number, number, number] = [118, 92, 138];
+  const DUSK_B: [number, number, number] = [238, 148, 98];
 
   let top: string;
   let bottom: string;
@@ -115,30 +116,31 @@ function getSkyAtmosphere(hour: number): {
     const t = (hour - 5) / 1.5;
     top = lerpRgb(NIGHT_T, DAWN_T, t);
     bottom = lerpRgb(NIGHT_B, DAWN_B, t);
-    nightFactor = 1 - t * 0.7;
-    goldenFactor = t * 0.7;
-  } else if (hour < 8.5) {
-    const t = (hour - 6.5) / 2;
+    nightFactor = 1 - t * 0.72;
+    goldenFactor = 0.25 + t * 0.65;
+  } else if (hour < 9) {
+    const t = (hour - 6.5) / 2.5;
     top = lerpRgb(DAWN_T, DAY_T, t);
     bottom = lerpRgb(DAWN_B, DAY_B, t);
-    nightFactor = (1 - t) * 0.3;
-    goldenFactor = (1 - t) * 0.7;
-  } else if (hour < 16.5) {
+    nightFactor = (1 - t) * 0.28;
+    goldenFactor = 0.9 - t * 0.45;
+  } else if (hour < 15.5) {
     top = lerpRgb(DAY_T, DAY_T, 0);
     bottom = lerpRgb(DAY_B, DAY_B, 0);
     nightFactor = 0;
+    goldenFactor = 0.42; // crisp warm autumn sunlight all day
   } else if (hour < 18.5) {
-    const t = (hour - 16.5) / 2;
+    const t = (hour - 15.5) / 3;
     top = lerpRgb(DAY_T, DUSK_T, t);
     bottom = lerpRgb(DAY_B, DUSK_B, t);
     nightFactor = t * 0.35;
-    goldenFactor = Math.sin(t * Math.PI) * 0.85;
+    goldenFactor = 0.45 + Math.sin(t * Math.PI) * 0.55;
   } else if (hour < 20.5) {
     const t = (hour - 18.5) / 2;
     top = lerpRgb(DUSK_T, NIGHT_T, t);
     bottom = lerpRgb(DUSK_B, NIGHT_B, t);
     nightFactor = 0.35 + t * 0.65;
-    goldenFactor = (1 - t) * 0.3;
+    goldenFactor = (1 - t) * 0.35;
   } else {
     top = lerpRgb(NIGHT_T, NIGHT_T, 0);
     bottom = lerpRgb(NIGHT_B, NIGHT_B, 0);
@@ -191,7 +193,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
     const pal = readScenePalette(canvas);
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const ambient = createAmbientSystem(56, 12, 10);
+    const ambient = createAmbientSystem(56, 12, 10, 64);
 
     // Initialize 4x2 world chunk pool
     const chunks: WorldChunk[] = [];
@@ -314,30 +316,40 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
     };
 
     const drawWildTree = (ctx: CanvasRenderingContext2D, cx: number, cy: number, sc = 1, pine = false) => {
-      ctx.fillStyle = 'rgba(10,20,30,0.22)';
+      ctx.fillStyle = 'rgba(26,18,16,0.22)';
       ctx.beginPath();
       ctx.ellipse(cx + 3 * sc, cy + 2 * sc, 5.8 * sc, 2.8 * sc, 0, 0, 7);
       ctx.fill();
       ctx.fillStyle = pal.wood ?? pal.door;
       ctx.fillRect(cx - sc, cy - 7 * sc, 2 * sc, 8 * sc);
 
+      const tone = Math.abs(Math.round(cx * 3 + cy * 5)) % 5;
+
       if (pine) {
-        // Multi-tier highland pine tree
-        ctx.fillStyle = '#2d5a3b';
+        // Autumn highland trees: mix of evergreen pines, amber larch & maple crimson
+        const sets: Array<[string, string, string]> = [
+          ['#3a5433', '#5a7840', '#8fa34f'],
+          ['#8a4c1f', '#cc7a29', '#edb24c'],
+          ['#7a2f22', '#b84b34', '#df764e'],
+          ['#485c34', '#728541', '#adb252'],
+          ['#915722', '#d68f31', '#f3c65e'],
+        ];
+        const [c0, c1, c2] = sets[tone];
+        ctx.fillStyle = c0;
         ctx.beginPath();
         ctx.moveTo(cx, cy - 21 * sc);
         ctx.lineTo(cx + 6.5 * sc, cy - 5 * sc);
         ctx.lineTo(cx - 6.5 * sc, cy - 5 * sc);
         ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = pal.foliage;
+        ctx.fillStyle = c1;
         ctx.beginPath();
         ctx.moveTo(cx, cy - 22 * sc);
         ctx.lineTo(cx + 5 * sc, cy - 10 * sc);
         ctx.lineTo(cx - 5 * sc, cy - 10 * sc);
         ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = pal.leaf;
+        ctx.fillStyle = c2;
         ctx.beginPath();
         ctx.moveTo(cx, cy - 23 * sc);
         ctx.lineTo(cx + 3 * sc, cy - 15 * sc);
@@ -347,15 +359,24 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         return;
       }
 
-      ctx.fillStyle = '#2c5c39';
+      // Urban & countryside golden-red autumn foliage
+      const canopySets: Array<[string, string, string]> = [
+        ['#99541f', '#dd8e2e', '#f5c358'],
+        ['#87371d', '#ca5f2b', '#eb8f48'],
+        ['#782a20', '#ba4232', '#e06c50'],
+        ['#4a6134', '#768c44', '#b0b858'],
+        ['#9e6122', '#e3a137', '#f7d26a'],
+      ];
+      const [d0, d1, d2] = canopySets[tone];
+      ctx.fillStyle = d0;
       ctx.beginPath();
       ctx.ellipse(cx + 1.2 * sc, cy - 9 * sc, 6 * sc, 7.2 * sc, 0, 0, 7);
       ctx.fill();
-      ctx.fillStyle = pal.foliage;
+      ctx.fillStyle = d1;
       ctx.beginPath();
       ctx.ellipse(cx, cy - 10 * sc, 6 * sc, 7.8 * sc, 0, 0, 7);
       ctx.fill();
-      ctx.fillStyle = pal.leaf;
+      ctx.fillStyle = d2;
       ctx.beginPath();
       ctx.ellipse(cx - 2 * sc, cy - 13 * sc, 3.8 * sc, 4.6 * sc, -0.3, 0, 7);
       ctx.fill();
@@ -1003,15 +1024,25 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         screenCtx.textAlign = 'start';
       }
 
-      // 4. Atmospheric golden-hour & night lighting + radial night blooms
+      // 4. Atmospheric autumn sunlight & night lighting + radial night blooms
       screenCtx.setTransform(1, 0, 0, 1, 0, 0);
       if (atmo.goldenFactor > 0.02) {
-        screenCtx.fillStyle = `rgba(255, 165, 75, ${atmo.goldenFactor * 0.12})`;
+        const sunGrad = screenCtx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        sunGrad.addColorStop(0, `rgba(255, 205, 118, ${atmo.goldenFactor * 0.17})`);
+        sunGrad.addColorStop(0.55, `rgba(255, 178, 92, ${atmo.goldenFactor * 0.09})`);
+        sunGrad.addColorStop(1, `rgba(215, 128, 72, ${atmo.goldenFactor * 0.05})`);
+        screenCtx.fillStyle = sunGrad;
         screenCtx.fillRect(0, 0, canvas.width, canvas.height);
       }
       if (atmo.nightFactor > 0.02) {
-        screenCtx.fillStyle = `rgba(10, 16, 46, ${atmo.nightFactor * 0.46})`;
+        screenCtx.fillStyle = `rgba(14, 18, 44, ${atmo.nightFactor * 0.45})`;
         screenCtx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Drifting falling autumn leaves across the screen
+      if (!reducedMotion && preset.leaves > 0) {
+        screenCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawFallingAutumnLeaves(screenCtx, ambient, preset.leaves, cw, ch, atmo.nightFactor);
       }
 
       // Additive warm streetlamp & landmark glow blooms at night

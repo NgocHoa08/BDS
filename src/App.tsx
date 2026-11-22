@@ -8,12 +8,14 @@ import {
   Landmark,
   Map as MapIcon,
   Minus,
+  Music,
   Pause,
   Play,
   Plus,
   Settings,
   Store,
   Trophy,
+  VolumeX,
 } from 'lucide-react';
 import { AuctionModal } from './components/modals/AuctionModal';
 import { NegotiationModal } from './components/modals/NegotiationModal';
@@ -47,7 +49,16 @@ import {
   syncPlayerScore,
   useLeaderboard,
 } from './game/leaderboard';
-import { GRAPHICS_PRESETS, notifyStore, playSfx, pushFloatingFx, store, useGameVersion } from './game/store';
+import {
+  GRAPHICS_PRESETS,
+  notifyStore,
+  playSfx,
+  pushFloatingFx,
+  setMusicEnabled,
+  store,
+  useGameVersion,
+} from './game/store';
+import { chillMusic } from './game/music';
 import type { ActivePanel } from './game/types';
 
 const PANEL_TITLES: Record<Exclude<ActivePanel, null>, string> = {
@@ -143,6 +154,16 @@ export default function App() {
       }
     }, 20000);
 
+    const onFirstGesture = () => {
+      if (store.musicEnabled) {
+        chillMusic.unlockAndStart(true, store.musicVolume);
+      }
+      window.removeEventListener('pointerdown', onFirstGesture);
+      window.removeEventListener('keydown', onFirstGesture);
+    };
+    window.addEventListener('pointerdown', onFirstGesture);
+    window.addEventListener('keydown', onFirstGesture);
+
     const onHide = () => {
       if (store.s) {
         saveGameState(store.s);
@@ -155,7 +176,10 @@ export default function App() {
     return () => {
       cancelAnimationFrame(rafId);
       window.clearInterval(syncInterval);
+      window.removeEventListener('pointerdown', onFirstGesture);
+      window.removeEventListener('keydown', onFirstGesture);
       window.removeEventListener('pagehide', onHide);
+      chillMusic.stop();
       disposeLeaderboard();
     };
   }, [pushToast]);
@@ -268,7 +292,7 @@ export default function App() {
           <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="rounded-full bg-secondary px-2 py-0.5">
-                {hr >= 6 && hr < 18 ? '☀️' : '🌙'} {String(hr).padStart(2, '0')}:{String(min).padStart(2, '0')} · Ngày{' '}
+                🍂 {hr >= 6 && hr < 18 ? '☀️' : '🌙'} {String(hr).padStart(2, '0')}:{String(min).padStart(2, '0')} · Ngày{' '}
                 {day} · Th{((monthIdx - 1) % 12) + 1} · Năm {year}
               </span>
               {store.showFps && (
@@ -283,6 +307,16 @@ export default function App() {
               )}
             </div>
             <div className="flex items-center gap-1">
+              <button
+                aria-label={store.musicEnabled ? 'Tắt nhạc nền' : 'Bật nhạc nền'}
+                title={store.musicEnabled ? 'Tắt nhạc nền Chill' : 'Bật nhạc nền Chill'}
+                onClick={() => setMusicEnabled(!store.musicEnabled)}
+                className={`rounded-full p-1.5 transition-colors ${
+                  store.musicEnabled ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
+                }`}
+              >
+                {store.musicEnabled ? <Music size={14} /> : <VolumeX size={14} />}
+              </button>
               <button
                 aria-label="Tạm dừng"
                 onClick={() => {

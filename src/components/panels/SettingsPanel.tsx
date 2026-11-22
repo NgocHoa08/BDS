@@ -8,6 +8,7 @@ import {
   HelpCircle,
   LogIn,
   LogOut,
+  Music,
   Sparkles,
   Upload,
   UserCheck,
@@ -33,6 +34,8 @@ import {
   GRAPHICS_PRESETS,
   notifyStore,
   saveGfxSettings,
+  setMusicEnabled,
+  setMusicVolume,
   store,
   type GraphicsQuality,
 } from '../../game/store';
@@ -312,6 +315,37 @@ export function SettingsPanel({
               </button>
             );
           })}
+        </div>
+      </section>
+
+      {/* Autumn Chill BGM & Sound */}
+      <section className="space-y-2.5 rounded-2xl bg-secondary p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <Music size={16} className="text-primary" />
+            Nhạc nền Chill Mùa Thu
+          </div>
+          <button
+            type="button"
+            onClick={() => setMusicEnabled(!store.musicEnabled)}
+            className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${
+              store.musicEnabled ? 'bg-primary text-primary-foreground' : 'bg-background/60 text-muted-foreground'
+            }`}
+          >
+            {store.musicEnabled ? 'Đang bật' : 'Đã tắt'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+          <span>Âm lượng</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(store.musicVolume * 100)}
+            onChange={(e) => setMusicVolume(Number(e.target.value) / 100)}
+            className="flex-1 accent-[var(--color-primary)]"
+          />
+          <span className="w-8 text-right font-semibold text-foreground">{Math.round(store.musicVolume * 100)}%</span>
         </div>
       </section>
 
