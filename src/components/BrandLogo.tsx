@@ -3,23 +3,29 @@ import { useId } from 'react';
 interface BrandLogoProps {
   size?: 'sm' | 'md' | 'lg';
   showSubtitle?: boolean;
+  compactMobile?: boolean;
   className?: string;
 }
 
-export function BrandLogo({ size = 'md', showSubtitle = false, className = '' }: BrandLogoProps) {
+export function BrandLogo({
+  size = 'md',
+  showSubtitle = false,
+  compactMobile = false,
+  className = '',
+}: BrandLogoProps) {
   const uid = useId();
   const goldId = `${uid}-gold`;
   const bgId = `${uid}-bg`;
   const iconPx = size === 'sm' ? 24 : size === 'lg' ? 42 : 30;
   const titleCls =
     size === 'sm'
-      ? 'text-sm tracking-[0.14em]'
+      ? 'text-xs sm:text-sm tracking-[0.12em] sm:tracking-[0.14em]'
       : size === 'lg'
         ? 'text-2xl tracking-[0.16em]'
         : 'text-base tracking-[0.14em]';
 
   return (
-    <div className={`inline-flex items-center gap-2 ${className}`}>
+    <div className={`inline-flex shrink-0 items-center gap-1.5 sm:gap-2 ${className}`}>
       <svg
         width={iconPx}
         height={iconPx}
@@ -68,7 +74,7 @@ export function BrandLogo({ size = 'md', showSubtitle = false, className = '' }:
         <path d="M13 51H51" stroke={`url(#${goldId})`} strokeWidth="2.4" strokeLinecap="round" />
       </svg>
 
-      <div className="leading-none">
+      <div className={`leading-none ${compactMobile ? 'hidden min-[380px]:block' : ''}`}>
         <div className={`text-gold font-black ${titleCls}`}>BDSNH</div>
         {showSubtitle && (
           <div className="mt-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">

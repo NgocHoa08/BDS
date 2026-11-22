@@ -272,41 +272,57 @@ export default function App() {
     <div className="relative h-dvh w-full overflow-hidden select-none bg-background text-foreground">
       <CityCanvas onTap={handlePlotTap} onPalaceTap={() => setPanel('palace')} fpsRef={fpsRef} />
 
-      {/* Top HUD */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        <div className="panel pointer-events-auto rounded-2xl px-3 py-2">
+      {/* Unified Top HUD Stack (never overlaps on notched or narrow phones) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-1.5 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <div className="panel pointer-events-auto rounded-2xl px-2.5 py-2 sm:px-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-3">
-              <BrandLogo size="sm" className="border-r border-border pr-3" />
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <BrandLogo size="sm" compactMobile className="border-r border-border pr-2 sm:pr-3" />
               <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Tiền mặt</div>
-                <div className="text-gold text-lg font-black leading-tight">{formatMoney(s.cash)}</div>
+                <div className="text-[9px] uppercase tracking-wider text-muted-foreground sm:text-[10px] sm:tracking-widest">
+                  Tiền mặt
+                </div>
+                <div className="text-gold truncate whitespace-nowrap text-base font-black leading-tight sm:text-lg">
+                  {formatMoney(s.cash)}
+                </div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Tài sản ròng</div>
-              <div className="font-bold leading-tight text-success">{formatMoney(netWorth)}</div>
+            <div className="min-w-0 text-right">
+              <div className="text-[9px] uppercase tracking-wider text-muted-foreground sm:text-[10px] sm:tracking-widest">
+                Tài sản ròng
+              </div>
+              <div className="truncate whitespace-nowrap text-sm font-bold leading-tight text-success sm:text-base">
+                {formatMoney(netWorth)}
+              </div>
             </div>
           </div>
 
-          <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="rounded-full bg-secondary px-2 py-0.5">
-                🍂 {hr >= 6 && hr < 18 ? '☀️' : '🌙'} {String(hr).padStart(2, '0')}:{String(min).padStart(2, '0')} · Ngày{' '}
-                {day} · Th{((monthIdx - 1) % 12) + 1} · Năm {year}
+          <div className="mt-1.5 flex items-center justify-between gap-1.5 text-[11px] sm:gap-2 sm:text-xs">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5">
+                <span>🍂</span>
+                <span>{hr >= 6 && hr < 18 ? '☀️' : '🌙'}</span>
+                <span>
+                  {String(hr).padStart(2, '0')}:{String(min).padStart(2, '0')}
+                </span>
+                <span>·</span>
+                <span>N{day}</span>
+                <span className="hidden min-[360px]:inline">
+                  · T{((monthIdx - 1) % 12) + 1} · Năm {year}
+                </span>
               </span>
               {store.showFps && (
                 <button
                   onClick={() => setPanel('settings')}
                   title="Cấu hình đồ hoạ & FPS"
-                  className="hidden items-center gap-1 rounded-full border border-border bg-background/50 px-2 py-0.5 text-[10px] font-semibold text-success sm:inline-flex"
+                  className="hidden shrink-0 items-center gap-1 rounded-full border border-border bg-background/50 px-2 py-0.5 text-[10px] font-semibold text-success md:inline-flex"
                 >
                   <span ref={fpsRef}>60 FPS</span>
                   <span className="text-muted-foreground">· {GRAPHICS_PRESETS[store.graphicsQuality].label}</span>
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 aria-label={store.musicEnabled ? 'Tắt nhạc nền' : 'Bật nhạc nền'}
                 title={store.musicEnabled ? 'Tắt nhạc nền Chill' : 'Bật nhạc nền Chill'}
@@ -315,7 +331,7 @@ export default function App() {
                   store.musicEnabled ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
                 }`}
               >
-                {store.musicEnabled ? <Music size={14} /> : <VolumeX size={14} />}
+                {store.musicEnabled ? <Music size={13} /> : <VolumeX size={13} />}
               </button>
               <button
                 aria-label="Tạm dừng"
@@ -327,7 +343,7 @@ export default function App() {
                   s.paused ? 'bg-destructive text-destructive-foreground' : 'bg-secondary'
                 }`}
               >
-                {s.paused ? <Play size={14} /> : <Pause size={14} />}
+                {s.paused ? <Play size={13} /> : <Pause size={13} />}
               </button>
               {SPEEDS.map((spd) => (
                 <Button
@@ -340,7 +356,7 @@ export default function App() {
                     saveGameState(s);
                     notifyStore();
                   }}
-                  className="h-7 px-2 text-xs"
+                  className="h-6 px-2 text-[11px] sm:h-7 sm:text-xs"
                 >
                   x{spd}
                 </Button>
@@ -349,24 +365,58 @@ export default function App() {
           </div>
         </div>
 
-        {(s.auction || s.offers.length > 0) && (
-          <div className="pointer-events-auto absolute left-2 top-40 flex flex-wrap gap-2">
-            {s.auction && (
-              <button onClick={notifyStore} className="btn-gold animate-pulse text-xs">
-                🔨 Đấu giá lô #{s.auction.plotId}
-              </button>
+        {/* Mission & Realtime Leaderboard pills */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 border border-border px-2.5 text-xs"
+            onClick={() => setPanel('city')}
+          >
+            <Trophy size={14} /> Nhiệm vụ {s.claimedMissions.length}/{MISSIONS.length}
+          </Button>
+          <Button
+            aria-label="Bảng xếp hạng"
+            variant="secondary"
+            size="sm"
+            className="h-8 border border-border px-2.5 text-xs"
+            onClick={() => setPanel('leaderboard')}
+          >
+            <Crown size={14} className="text-primary" />
+            {lb.myRank ? `#${lb.myRank}` : 'BXH'}
+            {lb.status === 'connected' && (
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" title="Realtime online" />
             )}
-            {s.offers.length > 0 && (
-              <button onClick={() => setPanel('dat')} className="btn-ghost text-xs">
-                📩 {s.offers.length} lời đề nghị mua
-              </button>
-            )}
+          </Button>
+          {s.auction && (
+            <button onClick={notifyStore} className="btn-gold animate-pulse px-2.5 py-1.5 text-xs">
+              🔨 Đấu giá #{s.auction.plotId}
+            </button>
+          )}
+          {s.offers.length > 0 && (
+            <button onClick={() => setPanel('dat')} className="btn-ghost px-2.5 py-1.5 text-xs">
+              📩 {s.offers.length} đề nghị mua
+            </button>
+          )}
+        </div>
+
+        {/* Toasts neatly anchored below pills */}
+        {toasts.length > 0 && (
+          <div className="mt-0.5 flex flex-col items-center gap-1 px-2">
+            {toasts.map((item) => (
+              <div
+                key={item.id}
+                className="panel animate-pop max-w-[92vw] rounded-full px-3 py-1 text-center text-xs font-semibold"
+              >
+                {item.text}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Right floating toolbar */}
-      <div className="absolute right-2 top-1/3 z-10 flex flex-col gap-2">
+      {/* Right floating toolbar (centered vertically) */}
+      <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-2">
         <button
           aria-label="Phóng to"
           title="Phóng to"
@@ -406,52 +456,19 @@ export default function App() {
         </Button>
       </div>
 
-      {/* Mission & Realtime Leaderboard buttons */}
-      <div className="absolute left-2 top-28 z-10 flex items-center gap-1.5">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="border border-border"
-          onClick={() => setPanel('city')}
-        >
-          <Trophy size={15} /> Nhiệm vụ {s.claimedMissions.length}/{MISSIONS.length}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="border border-border"
-          onClick={() => setPanel('leaderboard')}
-        >
-          <Crown size={15} className="text-primary" />
-          {lb.myRank ? `#${lb.myRank}` : 'BXH'}
-          {lb.status === 'connected' && (
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" title="Realtime online" />
-          )}
-        </Button>
-      </div>
-
-      {/* Toasts */}
-      <div className="pointer-events-none absolute inset-x-0 top-52 z-20 flex flex-col items-center gap-1 px-4">
-        {toasts.map((item) => (
-          <div key={item.id} className="panel animate-pop rounded-full px-3 py-1.5 text-center text-xs font-semibold">
-            {item.text}
-          </div>
-        ))}
-      </div>
-
-      {/* Bottom Navigation */}
-      <nav className="absolute inset-x-0 bottom-0 z-10 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="panel grid grid-cols-6 rounded-2xl p-1">
+      {/* Bottom Navigation (crisp spacing even on 360px phones) */}
+      <nav className="absolute inset-x-0 bottom-0 z-10 p-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-2">
+        <div className="panel grid grid-cols-6 gap-0.5 rounded-2xl p-1">
           {NAV_ITEMS.map(([key, Icon, label]) => (
             <button
               key={key}
               onClick={() => setPanel(panel === key ? null : key)}
-              className={`flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold transition-colors ${
+              className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0 py-1.5 text-[9px] font-semibold leading-tight tracking-tight transition-colors sm:px-0.5 sm:text-[11px] sm:tracking-normal ${
                 panel === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Icon size={20} />
-              {label}
+              <Icon size={18} className="shrink-0 sm:h-5 sm:w-5" />
+              <span className="max-w-full whitespace-nowrap">{label}</span>
             </button>
           ))}
         </div>

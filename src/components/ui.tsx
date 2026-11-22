@@ -62,18 +62,20 @@ export function BottomSheet({
 }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center">
-      <div className="panel pointer-events-auto flex max-h-[68dvh] w-full max-w-2xl animate-pop flex-col rounded-t-3xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-gold text-lg font-black">{title}</h2>
+      <div className="panel pointer-events-auto flex max-h-[78dvh] w-full max-w-2xl animate-pop flex-col rounded-t-3xl sm:max-h-[72dvh]">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="text-gold truncate pr-2 text-base font-black sm:text-lg">{title}</h2>
           <button
             aria-label="Đóng"
             onClick={onClose}
-            className="rounded-full bg-secondary p-1.5 text-foreground hover:brightness-110"
+            className="shrink-0 rounded-full bg-secondary p-1.5 text-foreground hover:brightness-110"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="overflow-y-auto px-4 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">{children}</div>
+        <div className="overscroll-contain overflow-y-auto px-4 py-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -81,8 +83,10 @@ export function BottomSheet({
 
 export function ModalFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="absolute inset-0 z-40 flex items-end justify-center bg-background/60 p-3 backdrop-blur-[2px] sm:items-center">
-      <div className="panel w-full max-w-md animate-pop rounded-3xl p-4">{children}</div>
+    <div className="absolute inset-0 z-40 flex items-end justify-center bg-background/65 p-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:items-center sm:p-4">
+      <div className="panel max-h-[88dvh] w-full max-w-md animate-pop overflow-y-auto overscroll-contain rounded-3xl p-4">
+        {children}
+      </div>
     </div>
   );
 }
