@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+:root {
+  --scene-pavement: oklch(72% 0.012 230);
+  --scene-asphalt: oklch(35% 0.014 230);
+  --scene-lane: oklch(90% 0.025 95);
+  --scene-glass: oklch(54% 0.075 225);
+  --scene-reflection: oklch(86% 0.042 215);
+  --scene-lit: oklch(91% 0.12 90);
+  --scene-trim: oklch(96% 0.008 90);
+  --scene-door: oklch(31% 0.025 230);
+  --scene-foliage: oklch(48% 0.1 150);
+  --scene-leaf: oklch(64% 0.13 140);
+  --scene-shadow: oklch(20% 0.03 230 / 0.2);
+  --scene-outline: oklch(20% 0.02 230 / 0.3);
+  --scene-roof-shadow: oklch(20% 0.02 230 / 0.25);
+  --scene-pool: oklch(73% 0.11 210);
+  --scene-night: oklch(28% 0.04 230);
+  --scene-twilight: oklch(62% 0.07 235);
+  --scene-sky: oklch(85% 0.065 225);
+  --scene-stone: oklch(87% 0.016 90);
+  --scene-stone-shade: oklch(71% 0.015 90);
+  --scene-lawn: oklch(66% 0.12 140);
+  --scene-flower: oklch(66% 0.18 25);
+  --scene-skin: oklch(80% 0.07 60);
+  --scene-tile: oklch(56% 0.13 30);
+  --scene-roof-blue: oklch(45% 0.055 240);
+  --scene-home-sage: oklch(79% 0.035 150);
+  --scene-home-rose: oklch(83% 0.035 25);
+  --scene-vehicle-red: oklch(59% 0.19 25);
+  --scene-vehicle-teal: oklch(62% 0.09 185);
+  --scene-vehicle-gold: oklch(81% 0.14 85);
+  --scene-led-pink: oklch(80% 0.18 345);
+  --scene-led-cyan: oklch(88% 0.12 200);
+  --scene-led-gold: oklch(91% 0.16 90);
+  --scene-beam: oklch(88% 0.12 200 / 0.16);
+  --scene-pearl: oklch(62% 0.17 350);
+  --scene-gold-leaf: oklch(78% 0.15 80);
+  --scene-gold-shade: oklch(62% 0.13 70);
+  --scene-sandstone: oklch(72% 0.06 70);
+  --scene-sandstone-shade: oklch(58% 0.06 60);
+  --scene-porcelain: oklch(93% 0.02 220);
+  --scene-river: oklch(55% 0.09 220);
+  --scene-sand: oklch(88% 0.06 90);
+  --scene-solar: oklch(36% 0.07 255);
+  --scene-canvas: oklch(95% 0.025 80);
+  --scene-thatch: oklch(66% 0.09 75);
+  --scene-wood: oklch(45% 0.06 55);
+  --scene-neon: oklch(70% 0.22 330);
+
+  --radius: 0.9rem;
+  --background: oklch(19% 0.008 220);
+  --foreground: oklch(96% 0.008 85);
+  --card: oklch(25% 0.012 220 / 0.96);
+  --card-foreground: oklch(96% 0.02 85);
+  --primary: oklch(82% 0.15 82);
+  --primary-foreground: oklch(22% 0.04 50);
+  --secondary: oklch(32% 0.012 220);
+  --secondary-foreground: oklch(95% 0.02 85);
+  --muted: oklch(30% 0.012 220);
+  --muted-foreground: oklch(77% 0.012 220);
+  --accent: oklch(70% 0.14 160);
+  --accent-foreground: oklch(18% 0.03 160);
+  --destructive: oklch(60% 0.2 27);
+  --destructive-foreground: oklch(98% 0 0);
+  --success: oklch(80% 0.15 155);
+  --border: oklch(82% 0.15 82 / 0.22);
+  --input: oklch(35% 0.012 220);
+  --ring: oklch(82% 0.15 82);
+  --gradient-gold: linear-gradient(180deg, oklch(88% 0.14 88), oklch(72% 0.16 70));
+  --gradient-panel: linear-gradient(180deg, oklch(28% 0.012 220 / 0.97), oklch(21% 0.01 220 / 0.98));
+  --shadow-panel: 0 -10px 40px -10px oklch(0% 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.panel {
+  background: var(--gradient-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.btn-gold {
+  background: var(--gradient-gold);
+  color: var(--primary-foreground);
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.9rem;
+  font-weight: 700;
+  box-shadow: 0 2px oklch(50% 0.12 60), 0 6px 14px -6px oklch(82% 0.15 82 / 0.6);
+  transition: transform 0.1s ease, filter 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-gold:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-gold:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-gold:disabled {
+  opacity: 0.4;
+}
+
+.btn-ghost {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+  transition: transform 0.1s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn-ghost:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.4;
+}
+
+.text-gold {
+  background: var(--gradient-gold);
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-pop {
+  animation: 0.22s ease-out pop-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop {
+    animation: none;
+  }
+}
+
+.mission-progress {
+  appearance: none;
+  background: var(--secondary);
+  border: none;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.mission-progress::-webkit-progress-bar {
+  background: var(--secondary);
+}
+
+.mission-progress::-webkit-progress-value {
+  background: var(--primary);
+  border-radius: 9999px;
+}
+
+.mission-progress::-moz-progress-bar {
+  background: var(--primary);
+  border-radius: 9999px;
+}
