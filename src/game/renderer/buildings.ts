@@ -1,5 +1,5 @@
-import type { BuildingType, RegionId } from '../types';
-import { createIsoHelpers, type ScenePalette } from './isoPrimitives';
+import type { BuildingPaint, BuildingType, RegionId } from '../types';
+import { createIsoHelpers, shadeHex, type ScenePalette } from './isoPrimitives';
 
 const SPECIAL_STYLES: Partial<Record<BuildingType, [string, string]>> = {
   quan_cafe: ['kiosk', 'tile'],
@@ -50,16 +50,19 @@ export function drawSpecialBuilding(
   plotId: number,
   isNight: boolean,
   pal: ScenePalette,
-  level = 1
+  level = 1,
+  paint?: BuildingPaint
 ) {
   const entry = SPECIAL_STYLES[type];
   if (!entry) return;
   const [kind, accentKey] = entry;
-  const accent = pal[accentKey];
+  const accent = paint?.roof ?? pal[accentKey];
   const { point, poly, slab, line, block, windows, pitched, tree, frontFace } = createIsoHelpers(ctx, ox, oy, pal);
 
   const variant = ((plotId * 2654435761) >>> 0) % 8;
-  const wallColor = [pal.stone, pal['home-sage'], pal['home-rose'], pal.trim][variant % 4];
+  const wallColor = paint?.wall ?? [pal.stone, pal['home-sage'], pal['home-rose'], pal.trim][variant % 4];
+  const sideColor = paint?.wall ? shadeHex(paint.wall, -0.22) : pal['stone-shade'];
+  const topColor = paint?.roof ?? pal.trim;
   const greenGround = ['solar', 'resort', 'tents', 'ponds', 'tea', 'golf', 'park', 'stilt'].includes(kind);
   slab(0.05, 0.05, 0.9, 0.9, 0, greenGround ? pal.lawn : pal.pavement);
 
@@ -79,7 +82,7 @@ export function drawSpecialBuilding(
 
   switch (kind) {
     case 'kiosk': {
-      block(0.2, 0.14, 0.56, 0.44, height, wallColor, pal['stone-shade'], pal.trim);
+      block(0.2, 0.14, 0.56, 0.44, height, wallColor, sideColor, topColor);
       frontFace(0.24, 0.14, 0.48, 0.44, 1, height * 0.6, isNight ? pal.lit : pal.glass);
       for (let i = 0; i < 6; i++) {
         const u = 0.2 + i * 0.0933;
@@ -94,7 +97,7 @@ export function drawSpecialBuilding(
         );
       }
       // Roof signboard & AC box
-      block(0.28, 0.16, 0.4, 0.08, 3.2, accent, pal['stone-shade'], pal.trim, height, false);
+      block(0.28, 0.16, 0.4, 0.08, 3.2, accent, sideColor, pal.trim, height, false);
       block(0.64, 0.36, 0.1, 0.1, 2.2, pal['stone-shade'], pal.door, pal.trim, height, false);
       for (const u of [0.3, 0.62]) {
         pole(u, 0.84, 8);
@@ -107,7 +110,7 @@ export function drawSpecialBuilding(
       break;
     }
     case 'boutique': {
-      block(0.16, 0.14, 0.64, 0.5, height, wallColor, pal['stone-shade'], pal.trim);
+      block(0.16, 0.14, 0.64, 0.5, height, wallColor, sideColor, topColor);
       frontFace(0.2, 0.14, 0.56, 0.5, 1, height * 0.45, isNight ? pal.lit : pal.glass);
       frontFace(0.16, 0.15, 0.64, 0.5, height * 0.62, height * 0.8, accent);
       windows(0.16, 0.14, 0.64, 0.5, height * 0.4, height * 0.45, isNight, 8, 4, 3);
@@ -128,7 +131,7 @@ export function drawSpecialBuilding(
       break;
     }
     case 'cinema': {
-      block(0.12, 0.12, 0.74, 0.58, height, pal.door, pal['roof-blue'], pal['stone-shade']);
+      block(0.12, 0.12, 0.74, 0.58, height, paint?.wall ?? pal.door, paint?.wall ? sideColor : pal['roof-blue'], paint?.roof ?? pal['stone-shade']);
       for (let i = 0; i < 3; i++) {
         frontFace(0.18 + i * 0.22, 0.12, 0.16, 0.58, 6, height - 5, i === 1 ? accent : pal['vehicle-gold']);
       }
@@ -166,18 +169,18 @@ export function drawSpecialBuilding(
       break;
     }
     case 'mall': {
-      block(0.08, 0.1, 0.84, 0.66, height * 0.55, pal.stone, pal['stone-shade'], pal.trim);
+      block(0.08, 0.1, 0.84, 0.66, height * 0.55, paint?.wall ?? pal.stone, sideColor, topColor);
       for (const band of [height * 0.18, height * 0.36]) {
         frontFace(0.08, 0.1, 0.84, 0.66, band, band + 2.6, accent);
       }
       frontFace(0.12, 0.1, 0.76, 0.66, 1, height * 0.16, isNight ? pal.lit : pal.glass);
       block(0.28, 0.2, 0.46, 0.38, height * 0.45, pal.glass, pal.door, pal.reflection, height * 0.55);
       windows(0.28, 0.2, 0.46, 0.38, height * 0.45, height * 0.55, isNight, 6, 3, 4);
-      slab(0.32, 0.24, 0.38, 0.3, height + 0.6, pal.reflection);
+      slab(0.32, 0.24, 0.38, 0.3, height + 0.6, paint?.roof ?? pal.reflection);
       break;
     }
     case 'office': {
-      block(0.1, 0.1, 0.8, 0.66, 8, pal.stone, pal['stone-shade'], pal.trim);
+      block(0.1, 0.1, 0.8, 0.66, 8, paint?.wall ?? pal.stone, sideColor, topColor);
       const twin = variant % 2 === 0;
       const towers: Array<[number, number, number]> = twin
         ? [
@@ -187,9 +190,9 @@ export function drawSpecialBuilding(
         : [[0.22, 0.16, 0.5]];
       towers.forEach(([u, v, w], idx) => {
         const th = (height - 8) * (idx ? 0.82 : 1);
-        block(u, v, w, 0.42, th, pal.glass, pal.door, pal.reflection, 8);
+        block(u, v, w, 0.42, th, paint?.wall ?? pal.glass, paint?.wall ? sideColor : pal.door, paint?.roof ?? pal.reflection, 8);
         windows(u, v, w, 0.42, th, 8, isNight, 5, 2.6, 4);
-        block(u + 0.05, v + 0.05, w - 0.1, 0.32, 3.2, pal.trim, pal['stone-shade'], pal.trim, 8 + th, false);
+        block(u + 0.05, v + 0.05, w - 0.1, 0.32, 3.2, topColor, sideColor, topColor, 8 + th, false);
         if (!twin) {
           line(point(u + w / 2, v + 0.21, 11 + th), point(u + w / 2, v + 0.21, 11 + th + 16), pal.trim, 1.1);
         }
@@ -197,7 +200,7 @@ export function drawSpecialBuilding(
       break;
     }
     case 'datacenter': {
-      block(0.1, 0.14, 0.78, 0.56, height, pal['stone-shade'], pal['roof-blue'], pal.stone);
+      block(0.1, 0.14, 0.78, 0.56, height, paint?.wall ?? pal['stone-shade'], paint?.wall ? sideColor : pal['roof-blue'], topColor);
       frontFace(0.1, 0.14, 0.78, 0.56, height * 0.4, height * 0.48, accent);
       for (let i = 0; i < 4; i++) {
         const [cx, cy] = point(0.2 + i * 0.17, 0.4, height + 1);
@@ -219,15 +222,15 @@ export function drawSpecialBuilding(
       break;
     }
     case 'clinic': {
-      block(0.15, 0.14, 0.66, 0.5, height, pal.trim, pal.stone, pal.stone);
-      frontFace(0.15, 0.14, 0.66, 0.5, height * 0.48, height * 0.55, pal['roof-blue']);
+      block(0.15, 0.14, 0.66, 0.5, height, paint?.wall ?? pal.trim, paint?.wall ? sideColor : pal.stone, topColor);
+      frontFace(0.15, 0.14, 0.66, 0.5, height * 0.48, height * 0.55, paint?.roof ?? pal['roof-blue']);
       windows(0.15, 0.14, 0.66, 0.5, height, 0, isNight, 9, 4, 3);
       drawCross(ctx, point(0.48, 0.64, height * 0.75), accent, 3.2);
       break;
     }
     case 'hospital': {
-      block(0.08, 0.1, 0.84, 0.66, 12, pal.trim, pal.stone, pal.stone);
-      block(0.2, 0.2, 0.56, 0.36, height - 12, pal.trim, pal.stone, pal['stone-shade'], 12);
+      block(0.08, 0.1, 0.84, 0.66, 12, paint?.wall ?? pal.trim, paint?.wall ? sideColor : pal.stone, topColor);
+      block(0.2, 0.2, 0.56, 0.36, height - 12, paint?.wall ?? pal.trim, paint?.wall ? sideColor : pal.stone, topColor, 12);
       windows(0.2, 0.2, 0.56, 0.36, height - 12, 12, isNight, 7, 3.5, 4);
       const [hx, hy] = point(0.48, 0.38, height + 0.5);
       ctx.strokeStyle = accent;
@@ -239,9 +242,9 @@ export function drawSpecialBuilding(
       break;
     }
     case 'campus': {
-      block(0.1, 0.1, 0.78, 0.26, height, pal['home-rose'], pal['stone-shade'], pal.trim);
-      pitched(0.1, 0.1, 0.78, 0.26, height, 7, accent, pal['roof-blue']);
-      block(0.1, 0.36, 0.24, 0.48, height * 0.8, pal['home-rose'], pal['stone-shade'], pal.trim);
+      block(0.1, 0.1, 0.78, 0.26, height, paint?.wall ?? pal['home-rose'], sideColor, topColor);
+      pitched(0.1, 0.1, 0.78, 0.26, height, 7, accent, paint?.roof ? shadeHex(paint.roof, -0.22) : pal['roof-blue']);
+      block(0.1, 0.36, 0.24, 0.48, height * 0.8, paint?.wall ?? pal['home-rose'], sideColor, topColor);
       windows(0.1, 0.1, 0.78, 0.26, height, 0, isNight, 9, 4, 5);
       slab(0.42, 0.44, 0.44, 0.4, 0.2, pal.lawn);
       ctx.strokeStyle = pal.trim;
@@ -327,8 +330,8 @@ export function drawSpecialBuilding(
         [0.42, 0.1],
         [0.72, 0.18],
       ]) {
-        block(u, v, 0.2, 0.2, height * 0.6, pal.canvas ?? pal.trim, pal['stone-shade'], pal.trim);
-        pitched(u, v, 0.2, 0.2, height * 0.6, 9, accent, pal.wood ?? pal.door);
+        block(u, v, 0.2, 0.2, height * 0.6, paint?.wall ?? pal.canvas ?? pal.trim, sideColor, topColor);
+        pitched(u, v, 0.2, 0.2, height * 0.6, 9, accent, paint?.roof ? shadeHex(paint.roof, -0.22) : (pal.wood ?? pal.door));
       }
       tree(0.12, 0.8, 0.82, true);
       tree(0.85, 0.6, 0.82, true);
@@ -344,9 +347,9 @@ export function drawSpecialBuilding(
       ]) {
         pole(u, v, 6, pal.wood);
       }
-      block(0.2, 0.18, 0.54, 0.5, height - 6, pal.wood, pal.door, pal.wood, 6, false);
+      block(0.2, 0.18, 0.54, 0.5, height - 6, paint?.wall ?? pal.wood, paint?.wall ? sideColor : pal.door, paint?.wall ?? pal.wood, 6, false);
       frontFace(0.28, 0.18, 0.12, 0.5, 9, height - 4, isNight ? pal.lit : pal.door);
-      pitched(0.18, 0.16, 0.58, 0.54, height, 14, accent, pal.wood);
+      pitched(0.18, 0.16, 0.58, 0.54, height, 14, accent, paint?.roof ? shadeHex(paint.roof, -0.22) : pal.wood);
       line(point(0.5, 0.86), point(0.5, 0.68, 6), pal.wood, 1.5);
       tree(0.86, 0.3, 0.72);
       tree(0.12, 0.84, 0.62);
@@ -899,17 +902,21 @@ export function drawStandardBuilding(
   isNight: boolean,
   pal: ScenePalette,
   region: RegionId = 'city',
-  level = 1
+  level = 1,
+  paint?: BuildingPaint
 ) {
   const variant = (((plotId * 31) ^ (plotId >>> 2)) >>> 0) % 8;
   const theme = REGIONAL_THEMES[region] ?? REGIONAL_THEMES.city;
-  const wallColor = pal[theme.walls[variant % 4]];
-  const roofColor = variant % 3 === 2 ? pal.tile : pal[theme.roof];
+  const wallColor = paint?.wall ?? pal[theme.walls[variant % 4]];
+  const sideWallColor = paint?.wall ? shadeHex(paint.wall, -0.22) : pal['stone-shade'];
+  const roofColor = paint?.roof ?? (variant % 3 === 2 ? pal.tile : pal[theme.roof]);
+  const sideRoofColor = paint?.roof ? shadeHex(paint.roof, -0.22) : pal['stone-shade'];
+  const flatTopColor = paint?.roof ?? pal.trim;
 
   const { point: pt, poly, slab, block } = createIsoHelpers(ctx, ox, oy, pal);
 
   const box = (u: number, v: number, w: number, d: number, h: number, z = 0, pitchedRoof = false) => {
-    block(u, v, w, d, h, wallColor, pal['stone-shade'], pal.trim, z, z === 0);
+    block(u, v, w, d, h, wallColor, sideWallColor, flatTopColor, z, z === 0);
 
     for (let wz = 4; wz < h - 3; wz += 10) {
       for (let c = 0; c < 3; c++) {
@@ -945,7 +952,7 @@ export function drawStandardBuilding(
           pt(u + w + 0.03, v + d + 0.03, z + h),
           pt(u + w + 0.03, v + d * 0.5, z + h + rh),
         ],
-        pal['stone-shade']
+        sideRoofColor
       );
       ctx.strokeStyle = 'rgba(255,255,255,0.3)';
       ctx.lineWidth = 0.8;

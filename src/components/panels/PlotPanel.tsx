@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Palette, RotateCcw } from 'lucide-react';
 import {
   BUILDABLE_TYPES,
   BUILDINGS,
@@ -26,6 +28,7 @@ import {
   isCityLandmarkPlot,
   isNearRoad,
   openEtexCard,
+  paintBuilding,
   startBuyNegotiation,
   startSellNegotiation,
   toggleRentalListing,
@@ -33,6 +36,28 @@ import {
 } from '../../game/engine';
 import type { GameState, Plot, RegionId } from '../../game/types';
 import { StatRow, type ActionRunner } from '../ui';
+
+const WALL_SWATCHES = [
+  { name: 'Trắng sứ', hex: '#f4f1ea' },
+  { name: 'Kem cổ điển', hex: '#efe2c6' },
+  { name: 'Vàng nắng', hex: '#f4d37a' },
+  { name: 'Hồng phấn', hex: '#f2b8be' },
+  { name: 'Xanh bạc hà', hex: '#b6dfd0' },
+  { name: 'Xanh da trời', hex: '#a9d0ec' },
+  { name: 'Tím oải hương', hex: '#cfc1eb' },
+  { name: 'Xám hiện đại', hex: '#9ea7b2' },
+];
+
+const ROOF_SWATCHES = [
+  { name: 'Ngói đỏ', hex: '#b84836' },
+  { name: 'Xanh dương', hex: '#395c8a' },
+  { name: 'Xanh rêu', hex: '#3d6e52' },
+  { name: 'Vàng hoàng kim', hex: '#d9a432' },
+  { name: 'Cam đất', hex: '#d46a34' },
+  { name: 'Hồng san hô', hex: '#d95b7a' },
+  { name: 'Tím than', hex: '#544675' },
+  { name: 'Đen tuyền', hex: '#2c323b' },
+];
 
 function ownerLabel(s: GameState, p: Plot): string {
   if (p.owner === 'me') return 'Bạn';
@@ -53,6 +78,8 @@ export function PlotPanel({
   act: ActionRunner;
   openBuild: () => void;
 }) {
+  const [paintOpen, setPaintOpen] = useState(false);
+
   if (p.kind === 'gov' && p.gov) {
     const info = GOV_INFO[p.gov];
     return (
@@ -144,6 +171,15 @@ export function PlotPanel({
   const totalValue = getPlotTotalValue(s, p);
   const bDef = p.b ? BUILDINGS[p.b.type] : null;
   const foreignErr = isForeignRegion(p.region) ? checkForeignPermission(s, p) : null;
+  const canPaint = Boolean(p.owner === 'me' && p.b && p.b.buildLeft === 0);
+
+  const applyWall = (hex: string) => {
+    act(() => paintBuilding(p, { wall: hex, roof: p.b?.paint?.roof }));
+  };
+
+  const applyRoof = (hex: string) => {
+    act(() => paintBuilding(p, { wall: p.b?.paint?.wall, roof: hex }));
+  };
 
   return (
     <div>
@@ -190,6 +226,84 @@ export function PlotPanel({
         </p>
       )}
 
+      {/* Custom Building Color Studio */}
+      {canPaint && paintOpen && p.b && (
+        <section className="mt-3 space-y-2.5 rounded-2xl border border-border bg-secondary/80 p-3">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-primary">
+              <Palette size={14} /> Sơn màu công trình (miễn phí)
+            </span>
+            {p.b.paint && (
+              <button
+                type="button"
+                onClick={() => act(() => paintBuilding(p, null), 'Đã khôi phục màu mặc định')}
+                className="inline-flex items-center gap-1 rounded-md bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <RotateCcw size={11} /> Mặc định
+              </button>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Màu tường</span>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-foreground">
+                <span>Tự chọn</span>
+                <input
+                  type="color"
+                  value={p.b.paint?.wall ?? '#efe2c6'}
+                  onChange={(e) => applyWall(e.target.value)}
+                  className="h-5 w-7 cursor-pointer rounded border border-border bg-transparent"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {WALL_SWATCHES.map((sw) => (
+                <button
+                  key={sw.hex}
+                  type="button"
+                  title={sw.name}
+                  onClick={() => applyWall(sw.hex)}
+                  style={{ backgroundColor: sw.hex }}
+                  className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                    p.b?.paint?.wall === sw.hex ? 'border-primary ring-2 ring-primary/50' : 'border-black/25'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Màu mái &amp; điểm nhấn</span>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-foreground">
+                <span>Tự chọn</span>
+                <input
+                  type="color"
+                  value={p.b.paint?.roof ?? '#b84836'}
+                  onChange={(e) => applyRoof(e.target.value)}
+                  className="h-5 w-7 cursor-pointer rounded border border-border bg-transparent"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {ROOF_SWATCHES.map((sw) => (
+                <button
+                  key={sw.hex}
+                  type="button"
+                  title={sw.name}
+                  onClick={() => applyRoof(sw.hex)}
+                  style={{ backgroundColor: sw.hex }}
+                  className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                    p.b?.paint?.roof === sw.hex ? 'border-primary ring-2 ring-primary/50' : 'border-black/25'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="mt-3 grid grid-cols-2 gap-2">
         {p.kind === 'land' && !p.owner && (
           <button
@@ -220,6 +334,16 @@ export function PlotPanel({
                 onClick={() => act(() => upgradeBuilding(s, p), 'Đang nâng cấp!', p)}
               >
                 ⬆ Nâng cấp {formatMoney(getUpgradeCost(p.b))}
+              </button>
+            )}
+            {canPaint && (
+              <button
+                type="button"
+                className="btn-ghost flex items-center justify-center gap-1.5 text-xs"
+                onClick={() => setPaintOpen((prev) => !prev)}
+              >
+                <Palette size={14} className="text-primary" />
+                {paintOpen ? 'Đóng bảng màu' : '🎨 Sơn màu nhà'}
               </button>
             )}
             {p.b && bDef?.rental && p.b.buildLeft === 0 && (

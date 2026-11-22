@@ -693,14 +693,14 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
                 continue;
               }
               if (isSpecialBuilding(plot.b.type)) {
-                drawSpecialBuilding(ctx, sx, sy, h, plot.b.type, plot.id, isNight, pal, plot.b.level);
+                drawSpecialBuilding(ctx, sx, sy, h, plot.b.type, plot.id, isNight, pal, plot.b.level, plot.b.paint);
                 continue;
               }
               if (plot.b.type === 'thap_81' || plot.b.type === 'thap_sen') {
                 drawVietnameseTower(ctx, sx, sy + TILE_H, h, plot.b.type === 'thap_81', isNight, pal);
                 continue;
               }
-              drawStandardBuilding(ctx, sx, sy, h, plot.b.type, plot.id, isNight, pal, plot.region, plot.b.level);
+              drawStandardBuilding(ctx, sx, sy, h, plot.b.type, plot.id, isNight, pal, plot.region, plot.b.level, plot.b.paint);
             }
           } else if (plot.kind === 'land') {
             if (plot.region === 'mountain') {

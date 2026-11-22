@@ -549,6 +549,23 @@ export function toggleRentalListing(plot: Plot): null {
   return null;
 }
 
+export function paintBuilding(
+  plot: Plot,
+  paint: { wall?: string; roof?: string } | null
+): string | null {
+  if (!plot.b || plot.owner !== 'me') return 'Bạn chỉ có thể sơn công trình của mình.';
+  if (plot.b.buildLeft > 0) return 'Chờ công trình xây xong mới có thể sơn màu.';
+  if (!paint || (!paint.wall && !paint.roof)) {
+    delete plot.b.paint;
+  } else {
+    plot.b.paint = {
+      ...(paint.wall ? { wall: paint.wall } : {}),
+      ...(paint.roof ? { roof: paint.roof } : {}),
+    };
+  }
+  return null;
+}
+
 // Banking
 export function depositSavings(state: GameState, amount: number): null {
   const actual = Math.min(amount, state.cash);

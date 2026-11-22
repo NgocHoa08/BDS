@@ -75,12 +75,18 @@ export interface BuildingDef {
   category: string;
 }
 
+export interface BuildingPaint {
+  wall?: string;
+  roof?: string;
+}
+
 export interface PlotBuilding {
   type: BuildingType;
   level: number;
   buildLeft: number;
   rented: boolean;
   listed: boolean;
+  paint?: BuildingPaint;
 }
 
 export interface Plot {
