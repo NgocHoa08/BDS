@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { AuctionModal } from './components/modals/AuctionModal';
 import { NegotiationModal } from './components/modals/NegotiationModal';
+import { OfflineModal } from './components/modals/OfflineModal';
 import { TutorialModal } from './components/modals/TutorialModal';
 import { BankPanel } from './components/panels/BankPanel';
 import { BuildPanel } from './components/panels/BuildPanel';
@@ -35,6 +36,7 @@ import { BrandLogo } from './components/BrandLogo';
 import { MISSIONS, SPEEDS } from './game/constants';
 import {
   advanceTime,
+  applyOfflineProgress,
   createInitialGameState,
   formatMoney,
   getNetWorth,
@@ -59,7 +61,7 @@ import {
   useGameVersion,
 } from './game/store';
 import { chillMusic } from './game/music';
-import type { ActivePanel } from './game/types';
+import type { ActivePanel, GameState, OfflineReport } from './game/types';
 
 const PANEL_TITLES: Record<Exclude<ActivePanel, null>, string> = {
   plot: 'Thông tin lô đất',
@@ -90,6 +92,7 @@ export default function App() {
   const [panel, setPanel] = useState<ActivePanel>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [tutStep, setTutStep] = useState(0);
+  const [offlineReport, setOfflineReport] = useState<OfflineReport | null>(null);
   const toastSeqRef = useRef(0);
   const fpsRef = useRef<HTMLSpanElement | null>(null);
 
@@ -103,11 +106,27 @@ export default function App() {
 
   // Main simulation loop & persistence + Supabase Realtime leaderboard & Cloud Save sync
   useEffect(() => {
+    const runOfflineCheck = (state: GameState) => {
+      const report = applyOfflineProgress(state);
+      if (report) {
+        saveGameState(state);
+        syncPlayerScore(state, true).catch(() => {});
+        saveCloudState(state, true).catch(() => {});
+        notifyStore();
+        playSfx('coin');
+        setOfflineReport(report);
+      } else {
+        saveGameState(state);
+      }
+    };
+
     store.s = loadGameState() ?? createInitialGameState();
+    runOfflineCheck(store.s);
     notifyStore();
     initLeaderboard(store.s, (cloudState) => {
       store.s = cloudState;
       store.selected = null;
+      runOfflineCheck(cloudState);
       notifyStore();
       pushToast('☁️ Đã tự động tải tiến trình Cloud của bạn!');
     }).catch(() => {});
@@ -149,6 +168,7 @@ export default function App() {
 
     const syncInterval = window.setInterval(() => {
       if (store.s && store.s.tutorialDone) {
+        saveGameState(store.s);
         syncPlayerScore(store.s).catch(() => {});
         saveCloudState(store.s).catch(() => {});
       }
@@ -171,7 +191,16 @@ export default function App() {
         saveCloudState(store.s, true).catch(() => {});
       }
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        onHide();
+      } else if (document.visibilityState === 'visible' && store.s) {
+        last = performance.now();
+        runOfflineCheck(store.s);
+      }
+    };
     window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       cancelAnimationFrame(rafId);
@@ -179,6 +208,7 @@ export default function App() {
       window.removeEventListener('pointerdown', onFirstGesture);
       window.removeEventListener('keydown', onFirstGesture);
       window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       chillMusic.stop();
       disposeLeaderboard();
     };
@@ -563,6 +593,15 @@ export default function App() {
       )}
 
       {/* Modals */}
+      {offlineReport && !s.nego && !s.auction && s.tutorialDone && (
+        <OfflineModal
+          report={offlineReport}
+          onClose={() => {
+            playSfx('coin');
+            setOfflineReport(null);
+          }}
+        />
+      )}
       {s.nego && <NegotiationModal s={s} toast={pushToast} />}
       {s.auction && <AuctionModal s={s} toast={pushToast} />}
       {!s.tutorialDone && (

@@ -648,6 +648,11 @@ export const RATES = {
 
 export const SPEEDS = [1, 2] as const;
 
+export const OFFLINE_MAX_HOURS = 4;
+export const OFFLINE_MAX_MS = OFFLINE_MAX_HOURS * 3600 * 1000;
+export const OFFLINE_MIN_MS = 60 * 1000;
+export const OFFLINE_SECONDS_PER_DAY = 120; // 2 phút ngoài đời = 1 ngày game (30 ngày/giờ, tối đa 4 giờ = 120 ngày)
+
 export const INVESTOR_SHARE = 0.7;
 export const PLAYER_SHARE = 0.3;
 

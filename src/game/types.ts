@@ -228,6 +228,23 @@ export interface GameState {
   tetMode: TetMode;
   visas: ForeignRegionId[];
   etex: boolean;
+  lastActiveAt?: number;
+}
+
+export interface OfflineReport {
+  elapsedMs: number;
+  cappedMs: number;
+  wasCapped: boolean;
+  daysSimulated: number;
+  grossRevenue: number;
+  maintenance: number;
+  taxPaid: number;
+  investorPaid: number;
+  loanInterest: number;
+  savingsInterest: number;
+  netCashDelta: number;
+  completedBuildings: string[];
+  newPlotsUnlocked: number;
 }
 
 export interface FloatingFx {

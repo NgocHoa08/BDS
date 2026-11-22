@@ -426,6 +426,9 @@ export function SettingsPanel({
       </div>
 
       <p className="pt-1 text-center text-[11px] text-muted-foreground">
+        🌙 Thu nhập Offline: tự động nhảy tiền khi đóng web (30 ngày game/giờ, tối đa 4 giờ/lần).
+      </p>
+      <p className="text-center text-[11px] text-muted-foreground">
         Phím tắt: Space (Tạm dừng), 1/2 (Tốc độ), +/- (Thu phóng), H (Bản đồ giá), Esc (Đóng bảng).
       </p>
       <p className="text-center text-[11px] text-muted-foreground">

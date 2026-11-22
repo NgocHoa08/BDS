@@ -26,6 +26,9 @@ import {
   MISSIONS,
   NPC_NAMES,
   NPC_ROLES,
+  OFFLINE_MAX_MS,
+  OFFLINE_MIN_MS,
+  OFFLINE_SECONDS_PER_DAY,
   PLAYER_SHARE,
   PLOT_COUNT,
   RATES,
@@ -42,6 +45,7 @@ import type {
   GovId,
   Investment,
   Npc,
+  OfflineReport,
   PersonaId,
   Plot,
   PlotBuilding,
@@ -289,6 +293,7 @@ export function createInitialGameState(): GameState {
     tetMode: 'calendar',
     visas: [],
     etex: false,
+    lastActiveAt: Date.now(),
   };
 
   ensureSkylineLandmarks(state);
@@ -1307,9 +1312,188 @@ export function stepDay(state: GameState): DayTickResult {
   return result;
 }
 
+// Offline earnings (capped at OFFLINE_MAX_HOURS = 4h)
+export function applyOfflineProgress(state: GameState, now = Date.now()): OfflineReport | null {
+  const prevAt = state.lastActiveAt;
+  state.lastActiveAt = now;
+
+  if (!state.tutorialDone || state.paused || typeof prevAt !== 'number' || !Number.isFinite(prevAt)) {
+    return null;
+  }
+
+  const elapsedMs = now - prevAt;
+  if (elapsedMs < OFFLINE_MIN_MS) return null;
+
+  const myPlots = getOwnedPlots(state);
+  const hasProgress = myPlots.some((p) => p.b) || state.savings > 0;
+  if (!hasProgress) return null;
+
+  const cappedMs = Math.min(elapsedMs, OFFLINE_MAX_MS);
+  const wasCapped = elapsedMs > OFFLINE_MAX_MS;
+  const totalOfflineDays = cappedMs / 1000 / OFFLINE_SECONDS_PER_DAY;
+  if (totalOfflineDays < 0.05) return null;
+
+  const fullDays = Math.floor(totalOfflineDays);
+  const rem = totalOfflineDays - fullDays;
+  const startCash = state.cash;
+
+  let grossRevenue = 0;
+  let maintenance = 0;
+  let taxPaid = 0;
+  let investorPaid = 0;
+  let loanInterest = 0;
+  let savingsInterest = 0;
+  const completedBuildings: string[] = [];
+  let newPlotsUnlocked = 0;
+
+  const runSlice = (weight: number, isFullDay: boolean) => {
+    if (isFullDay) {
+      state.day += 1;
+    } else {
+      state.hour += weight * 24;
+      while (state.hour >= 24) {
+        state.hour -= 24;
+        state.day += 1;
+      }
+    }
+
+    state.campaigns = state.campaigns.filter((c) => state.day < c.endDay);
+
+    for (const plot of myPlots) {
+      const landTax = ((getLandPrice(state, plot) * RATES.landTax) / 30) * weight;
+      if (landTax > 0) {
+        state.cash -= landTax;
+        state.total.tax += landTax;
+        taxPaid += landTax;
+      }
+
+      if (!plot.b) continue;
+      if (plot.b.buildLeft > 0) {
+        if (isFullDay) {
+          plot.b.buildLeft -= 1;
+          if (plot.b.buildLeft === 0) {
+            const name = BUILDINGS[plot.b.type].name;
+            completedBuildings.push(name);
+            addLog(state, `${name} lô #${plot.id} đã hoàn thành (offline).`);
+          }
+        }
+        continue;
+      }
+
+      const def = BUILDINGS[plot.b.type];
+      if (def.rental && plot.b.listed && !plot.b.rented) {
+        if (Math.random() < (0.3 + state.idx[plot.region] * 0.1) * weight) {
+          plot.b.rented = true;
+        }
+      }
+
+      const rev = getDailyIncome(state, plot) * weight;
+      const maint = def.maint * plot.b.level * weight;
+      const bizTax = rev * RATES.bizTax;
+
+      if (rev > 0) {
+        state.cash += rev;
+        state.total.revenue += rev;
+        grossRevenue += rev;
+      }
+      if (maint > 0) {
+        state.cash -= maint;
+        state.total.expense += maint;
+        maintenance += maint;
+      }
+      if (bizTax > 0) {
+        state.cash -= bizTax;
+        state.total.tax += bizTax;
+        taxPaid += bizTax;
+      }
+
+      const inv = getActiveInvestment(state, plot.id);
+      if (inv) {
+        const prevPaid = inv.investorPaid;
+        const dailyNet = rev - bizTax - maint - landTax;
+        settleInvestmentDailyProfit(state, inv, dailyNet);
+        investorPaid += Math.max(0, inv.investorPaid - prevPaid);
+      }
+    }
+
+    if (state.savings > 0) {
+      const sInt = ((state.savings * RATES.savings) / 365) * weight;
+      state.savings += sInt;
+      savingsInterest += sInt;
+    }
+
+    for (const loan of state.loans) {
+      const lInt = ((loan.remaining * RATES.loan) / 365) * weight;
+      if (lInt > 0) {
+        state.cash -= lInt;
+        state.total.expense += lInt;
+        loanInterest += lInt;
+      }
+      if (isFullDay) {
+        loan.daysLeft = Math.max(1, loan.daysLeft - 1);
+      }
+    }
+
+    if (isFullDay) {
+      if ((state.day === 15 || state.day % 30 === 0) && getMapHeight(state) < MAX_MAP_H) {
+        newPlotsUnlocked += expandWorldRows(state, EXPANSION_ROWS_STEP);
+      }
+      if (state.day % 20 === 0) {
+        newPlotsUnlocked += reclaimSeaLand(state, 3);
+      }
+    }
+  };
+
+  for (let i = 0; i < fullDays; i++) {
+    runSlice(1, true);
+  }
+  if (rem >= 0.05) {
+    runSlice(rem, false);
+  }
+
+  const netCashDelta = state.cash - startCash;
+  if (
+    Math.abs(netCashDelta) < 1 &&
+    savingsInterest < 1 &&
+    completedBuildings.length === 0 &&
+    newPlotsUnlocked === 0
+  ) {
+    return null;
+  }
+
+  state.history.push({ day: state.day, worth: getNetWorth(state), cash: state.cash });
+  if (state.history.length > 120) state.history.shift();
+
+  const totalMin = Math.max(1, Math.floor(cappedMs / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const durStr = h > 0 ? (m > 0 ? `${h}g${m}p` : `${h}g`) : `${m}p`;
+  addLog(
+    state,
+    `🌙 Thu nhập offline (${durStr} · ${Number(totalOfflineDays.toFixed(1))} ngày): ${netCashDelta >= 0 ? '+' : ''}${formatMoney(netCashDelta)}.`
+  );
+
+  return {
+    elapsedMs,
+    cappedMs,
+    wasCapped,
+    daysSimulated: totalOfflineDays,
+    grossRevenue,
+    maintenance,
+    taxPaid,
+    investorPaid,
+    loanInterest,
+    savingsInterest,
+    netCashDelta,
+    completedBuildings,
+    newPlotsUnlocked,
+  };
+}
+
 // Persistence
 export function saveGameState(state: GameState): void {
   try {
+    state.lastActiveAt = Date.now();
     localStorage.setItem(SAVE_KEY, JSON.stringify({ ...state, nego: null }));
   } catch {
     // ignore quota errors
