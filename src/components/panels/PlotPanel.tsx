@@ -29,6 +29,8 @@ import {
   getMapHeight,
   getNpcById,
   getOwnedPlots,
+  getPlotSynergies,
+  getPlotSynergyBoost,
   getPlotTotalValue,
   getUpgradeCost,
   hasStaff,
@@ -243,6 +245,26 @@ export function PlotPanel({
             />
           )}
           <StatRow k="Tổng giá trị" v={formatMoney(totalValue)} />
+          {p.b.buildLeft === 0 && (() => {
+            const syns = getPlotSynergies(s, p);
+            if (!syns.length) return null;
+            const totalBoost = Math.round(getPlotSynergyBoost(s, p) * 100);
+            return (
+              <div className="mt-1.5 rounded-xl border border-primary/35 bg-primary/10 px-2.5 py-2 text-[11px]">
+                <div className="flex items-center justify-between font-bold text-primary">
+                  <span>✦ Combo Quy hoạch đang kích hoạt</span>
+                  <span className="text-emerald-300">+{totalBoost}% thu nhập</span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {syns.map((sy) => (
+                    <span key={sy.id} className="rounded-full bg-background/60 px-2 py-0.5 text-[10px] font-semibold">
+                      {sy.icon} {sy.name} +{Math.round(sy.boost * 100)}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {readOnly && p.b.paint && (p.b.paint.wall || p.b.paint.roof) && (
             <div className="flex items-center justify-between gap-3 py-1 text-sm">
               <span className="text-muted-foreground">Màu sơn nhà</span>

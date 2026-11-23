@@ -11,7 +11,7 @@ import {
   PALACE_BOUNDS,
   REGION_NAMES,
 } from '../constants';
-import { formatMoney, getCurrentSeason, getLandPrice, getMapHeight, isTetNightActive } from '../engine';
+import { formatMoney, getCurrentSeason, getLandPrice, getMapHeight, getPlotSynergyBoost, isTetNightActive } from '../engine';
 import { getViewState, GRAPHICS_PRESETS, store } from '../store';
 import type { GameState, Plot, RegionId, SeasonId } from '../types';
 import {
@@ -1113,6 +1113,19 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
           screenCtx.fillStyle = '#fbbf24';
           screenCtx.fillRect(sx - 2.6, by - 3.2, 1.8, 6.4);
           screenCtx.fillRect(sx + 0.8, by - 3.2, 1.8, 6.4);
+        } else if (p.owner === 'me' && !p.b.paused && getPlotSynergyBoost(state, p) > 0) {
+          const [sx, sy] = toScreen(p.x, p.y);
+          const h = BUILDINGS[p.b.type].height * (1 + (p.b.level - 1) * 0.35);
+          if (!isVisible(sx, sy, h + 28)) continue;
+          const syY = sy + TILE_H - h - 9 + Math.sin(tSec * 2.4 + p.id) * 1.5;
+          const pulse = 0.72 + 0.28 * Math.sin(tSec * 3.2 + p.id);
+          screenCtx.save();
+          screenCtx.globalAlpha = pulse;
+          screenCtx.fillStyle = '#fde047';
+          screenCtx.font = "bold 9px 'Be Vietnam Pro', sans-serif";
+          screenCtx.textAlign = 'center';
+          screenCtx.fillText('✦', sx, syY);
+          screenCtx.restore();
         }
       }
 

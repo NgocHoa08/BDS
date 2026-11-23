@@ -181,6 +181,40 @@ export interface Campaign {
   endDay: number;
 }
 
+export interface DilemmaChoice {
+  id: string;
+  label: string;
+  desc: string;
+  cost?: number;
+}
+
+export interface DilemmaEvent {
+  id: string;
+  templateId: string;
+  title: string;
+  icon: string;
+  body: string;
+  region?: RegionId;
+  choices: DilemmaChoice[];
+}
+
+export interface DailyProgress {
+  dateKey: string; // YYYY-MM-DD
+  streak: number;
+  checkedIn: boolean;
+  spinsLeft: number;
+  boughtToday: number;
+  builtToday: number;
+  earnedToday: number;
+  claimedQuests: string[];
+}
+
+export interface SynergyBonus {
+  id: string;
+  name: string;
+  icon: string;
+  boost: number; // e.g. 0.25 = +25%
+}
 export interface HistoryPoint {
   day: number;
   worth: number;
@@ -237,6 +271,9 @@ export interface GameState {
   etex: boolean;
   staff: StaffId[];
   seasonMode: SeasonMode;
+  dilemma?: DilemmaEvent | null;
+  lastDilemmaDay?: number;
+  daily?: DailyProgress;
   lastActiveAt?: number;
 }
 
@@ -311,4 +348,5 @@ export type ActivePanel =
   | 'invest'
   | 'city'
   | 'palace'
-  | 'leaderboard';
+  | 'leaderboard'
+  | 'rewards';

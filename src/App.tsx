@@ -6,6 +6,7 @@ import {
   Compass,
   Crown,
   Eye,
+  Gift,
   Hammer,
   HandCoins,
   Landmark,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 import { ChatWidget } from './components/ChatWidget';
 import { AuctionModal } from './components/modals/AuctionModal';
+import { DilemmaModal } from './components/modals/DilemmaModal';
 import { NegotiationModal } from './components/modals/NegotiationModal';
 import { OfflineModal } from './components/modals/OfflineModal';
 import { TutorialModal } from './components/modals/TutorialModal';
@@ -35,6 +37,7 @@ import { InvestPanel } from './components/panels/InvestPanel';
 import { LandPanel } from './components/panels/LandPanel';
 import { LeaderboardPanel } from './components/panels/LeaderboardPanel';
 import { PlotPanel } from './components/panels/PlotPanel';
+import { RewardsPanel } from './components/panels/RewardsPanel';
 import { SettingsPanel } from './components/panels/SettingsPanel';
 import { StatsPanel } from './components/panels/StatsPanel';
 import { BottomSheet, Button, type ActionRunner } from './components/ui';
@@ -47,6 +50,7 @@ import {
   createInitialGameState,
   formatMoney,
   getCurrentSeason,
+  getDailyNotificationCount,
   getNetWorth,
   getOwnedPlots,
   loadGameState,
@@ -93,6 +97,7 @@ const PANEL_TITLES: Record<Exclude<ActivePanel, null>, string> = {
   city: 'Hành trình BDSNH',
   palace: 'Dinh Độc Lập',
   leaderboard: 'Bảng xếp hạng BDSNH',
+  rewards: 'Phúc lợi & Quy hoạch',
 };
 
 const NAV_ITEMS: Array<[Exclude<ActivePanel, null>, typeof Building2, string]> = [
@@ -162,7 +167,7 @@ export default function App() {
       const dt = Math.min((now - last) / 1000, 0.25);
       last = now;
 
-      if (s && !store.visiting && !s.paused && !s.nego && !s.auction && s.tutorialDone) {
+      if (s && !store.visiting && !s.paused && !s.nego && !s.auction && !s.dilemma && s.tutorialDone) {
         const dayTicks = advanceTime(s, (dt * s.speed * 24) / 12);
         for (const res of dayTicks) {
           res.fx.forEach((item) => {
@@ -403,6 +408,7 @@ export default function App() {
   const min = Math.floor((s.hour % 1) * 60);
   const curSeason = getCurrentSeason(s);
   const seasonInfo = SEASON_INFO[curSeason];
+  const dailyBadgeCount = getDailyNotificationCount(s);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden select-none bg-background text-foreground">
@@ -569,6 +575,21 @@ export default function App() {
             {lb.myRank ? `#${lb.myRank}` : 'BXH'}
             {lb.status === 'connected' && (
               <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" title="Realtime online" />
+            )}
+          </Button>
+          <Button
+            aria-label="Phúc lợi hằng ngày"
+            variant="secondary"
+            size="sm"
+            className="relative h-8 border border-primary/45 px-2.5 text-xs [@media(max-height:520px)]:h-7 [@media(max-height:520px)]:px-2 [@media(max-height:520px)]:text-[11px]"
+            onClick={() => setPanel('rewards')}
+          >
+            <Gift size={14} className="text-primary" />
+            <span>Quà</span>
+            {dailyBadgeCount > 0 && (
+              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-black text-destructive-foreground">
+                {dailyBadgeCount}
+              </span>
             )}
           </Button>
           {s.auction && (
@@ -786,6 +807,7 @@ export default function App() {
               visitingBusyId={visitingBusyId}
             />
           )}
+          {panel === 'rewards' && <RewardsPanel s={s} onToast={pushToast} />}
           {panel === 'settings' && (
             <SettingsPanel
               s={s}
@@ -813,6 +835,7 @@ export default function App() {
       )}
       {s.nego && <NegotiationModal s={s} toast={pushToast} />}
       {s.auction && <AuctionModal s={s} toast={pushToast} />}
+      {s.dilemma && !s.nego && !s.auction && !visiting && <DilemmaModal s={s} toast={pushToast} />}
       {!s.tutorialDone && (
         <TutorialModal
           step={tutStep}

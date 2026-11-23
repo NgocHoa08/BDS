@@ -6,6 +6,9 @@ import {
   BUILDABLE_TYPES,
   BUILDINGS,
   CAMPAIGNS,
+  DAILY_QUESTS,
+  DAILY_STREAK_REWARDS,
+  DOMESTIC_REGIONS,
   DOMESTIC_GOV_MAP,
   ETEX_CARD_FEE,
   ETEX_MIN_FEE,
@@ -19,9 +22,12 @@ import {
   isForeignRegion,
   isLandmarkType,
   LANDMARK_PLACEMENTS,
+  LANDMARK_SYNERGY_BOOST,
+  LUCKY_WHEEL_PRIZES,
   MAP_H,
   MAP_W,
   MAX_MAP_H,
+  MAX_SYNERGY_BOOST,
   MILLION,
   MISSIONS,
   NPC_NAMES,
@@ -36,13 +42,16 @@ import {
   REGION_NAMES,
   SEASON_INFO,
   STAFF_MAP,
+  SYNERGY_RULES,
   VISA_FEE,
 } from './constants';
 import type {
   BuildingType,
   CampaignType,
   CitySnapshot,
+  DailyProgress,
   DayTickResult,
+  DilemmaEvent,
   ForeignRegionId,
   GameState,
   GovId,
@@ -56,6 +65,7 @@ import type {
   SeasonId,
   SeasonMode,
   StaffId,
+  SynergyBonus,
   TetMode,
 } from './types';
 
@@ -524,18 +534,65 @@ export function getCampaignBoost(state: GameState, region: RegionId): number {
     .reduce((sum, c) => sum + CAMPAIGNS[c.type].boost, 0);
 }
 
+export function getPlotSynergies(state: GameState, plot: Plot): SynergyBonus[] {
+  if (!plot.b || plot.b.buildLeft > 0) return [];
+  const type = plot.b.type;
+  const out: SynergyBonus[] = [];
+  const near2 = getNeighbors(state, plot, 2).filter(
+    (n) => n.b && n.b.buildLeft === 0 && (plot.owner !== 'me' || n.owner === 'me' || isCityLandmarkPlot(n))
+  );
+
+  for (const rule of SYNERGY_RULES) {
+    const inA = rule.groupA.includes(type);
+    const inB = rule.groupB.includes(type);
+    if (!inA && !inB) continue;
+
+    const sameGroup = rule.groupA === rule.groupB || (inA && inB && rule.groupA[0] === rule.groupB[0]);
+    const matched = near2.some((n) => {
+      const nt = n.b!.type;
+      if (sameGroup) return nt !== type && rule.groupB.includes(nt);
+      return (inA && rule.groupB.includes(nt)) || (inB && rule.groupA.includes(nt));
+    });
+    if (matched) {
+      out.push({ id: rule.id, name: rule.name, icon: rule.icon, boost: rule.boost });
+    }
+  }
+
+  // Landmark Aura within radius 3
+  if (!isLandmarkType(type)) {
+    const nearLandmark = getNeighbors(state, plot, 3).some((n) => n.b && isLandmarkType(n.b.type));
+    if (nearLandmark) {
+      out.push({
+        id: 'landmark_aura',
+        name: 'Hào Quang Siêu Tháp',
+        icon: '👑',
+        boost: LANDMARK_SYNERGY_BOOST,
+      });
+    }
+  }
+
+  return out;
+}
+
+export function getPlotSynergyBoost(state: GameState, plot: Plot): number {
+  const sum = getPlotSynergies(state, plot).reduce((acc, s) => acc + s.boost, 0);
+  return Math.min(MAX_SYNERGY_BOOST, sum);
+}
+
 export function getDailyIncome(state: GameState, plot: Plot): number {
   if (!plot.b || plot.b.buildLeft > 0 || plot.b.paused) return 0;
   const def = BUILDINGS[plot.b.type];
   if (def.rental && !plot.b.rented) return 0;
   const nearbyBuilt = getNeighbors(state, plot, 2).filter((p) => p.b).length;
+  const synergyBoost = getPlotSynergyBoost(state, plot);
   return (
     def.income *
     (1 + (plot.b.level - 1) * 0.6) *
     REGION_INCOME_MOD[plot.region] *
     (0.9 + Math.min(nearbyBuilt, 8) * 0.03) *
     (0.85 + state.idx[plot.region] * 0.15) *
-    (1 + getCampaignBoost(state, plot.region))
+    (1 + getCampaignBoost(state, plot.region)) *
+    (1 + synergyBoost)
   );
 }
 
@@ -598,6 +655,8 @@ function recordRevenue(state: GameState, amount: number): void {
   state.cash += amount;
   state.month.revenue += amount;
   state.total.revenue += amount;
+  const d = ensureDailyState(state);
+  d.earnedToday += amount;
 }
 
 export function getEtexFee(plot: Plot, amount: number): number {
@@ -667,6 +726,7 @@ export function buyEmptyLand(state: GameState, plot: Plot): string | null {
   chargeEtexFee(state, plot, price);
   plot.owner = 'me';
   plot.forSale = false;
+  ensureDailyState(state).boughtToday += 1;
   addLog(state, `Mua lô #${plot.id} (${REGION_NAMES[plot.region]}) giá ${formatMoney(price)}.`);
   return null;
 }
@@ -787,6 +847,7 @@ export function buyBulkEmptyLand(
   }
 
   if (boughtIds.length > 0) {
+    ensureDailyState(state).boughtToday += boughtIds.length;
     addLog(state, `🛒 Mua hàng loạt ${boughtIds.length} lô đất trống (tổng ${formatMoney(totalSpent)}).`);
     return { boughtIds, totalSpent, skipped, error: null };
   }
@@ -818,6 +879,7 @@ export function buildOnPlot(state: GameState, plot: Plot, type: BuildingType): s
     rented: false,
     listed: def.rental,
   };
+  ensureDailyState(state).builtToday += 1;
   addLog(state, `Cấp phép & khởi công ${def.name} tại lô #${plot.id}.`);
   return null;
 }
@@ -834,6 +896,7 @@ export function upgradeBuilding(state: GameState, plot: Plot): string | null {
   chargeEtexFee(state, plot, cost);
   plot.b.level += 1;
   plot.b.buildLeft = getEffectiveBuildDays(state, Math.ceil(BUILDINGS[plot.b.type].days / 2));
+  ensureDailyState(state).builtToday += 1;
   addLog(state, `Nâng cấp ${BUILDINGS[plot.b.type].name} lên cấp ${plot.b.level}.`);
   return null;
 }
@@ -918,6 +981,7 @@ export function buildBulkOnPlots(
   }
 
   if (builtIds.length > 0) {
+    ensureDailyState(state).builtToday += builtIds.length;
     addLog(
       state,
       `🏗 Xây hàng loạt ${builtIds.length} ${def.name} (tổng ${formatMoney(totalSpent)}).`
@@ -1003,6 +1067,7 @@ export function upgradeBulkPlots(
   }
 
   if (upgradedIds.length > 0) {
+    ensureDailyState(state).builtToday += upgradedIds.length;
     addLog(
       state,
       `⬆ Nâng cấp hàng loạt ${upgradedIds.length} công trình (tổng ${formatMoney(totalSpent)}).`
@@ -1404,6 +1469,7 @@ export function signBulkInvestments(
   }
 
   if (signedIds.length > 0) {
+    ensureDailyState(state).builtToday += signedIds.length;
     addLog(
       state,
       `🤝 Gọi vốn hàng loạt ${signedIds.length} ${def.name} (tổng ${formatMoney(totalCapital)}, ${termDays} ngày, chia 70/30).`
@@ -2008,10 +2074,475 @@ export function stepDay(state: GameState): DayTickResult {
     }
   }
 
+  // Interactive Dilemma Decision Card (every ~12-16 game days)
+  maybeSpawnDilemma(state);
+
   state.history.push({ day: state.day, worth: getNetWorth(state), cash: state.cash });
   if (state.history.length > 120) state.history.shift();
 
   return result;
+}
+
+// =========================================================================
+// Speed-up helper, Interactive Dilemma Events & Daily Retention Loop
+// =========================================================================
+
+export function speedUpAllConstructions(state: GameState, days: number): number {
+  let affected = 0;
+  for (const p of getOwnedPlots(state)) {
+    if (p.b && p.b.buildLeft > 0) {
+      p.b.buildLeft = Math.max(0, p.b.buildLeft - days);
+      affected += 1;
+    }
+  }
+  return affected;
+}
+
+function pickBestPlayerRegion(state: GameState): RegionId {
+  const owned = getOwnedPlots(state);
+  if (!owned.length) return 'city';
+  const counts = new Map<RegionId, number>();
+  for (const p of owned) counts.set(p.region, (counts.get(p.region) ?? 0) + 1);
+  let best: RegionId = owned[0].region;
+  let maxC = 0;
+  for (const [r, c] of counts) {
+    if (c > maxC) {
+      maxC = c;
+      best = r;
+    }
+  }
+  return best;
+}
+
+export function maybeSpawnDilemma(state: GameState): void {
+  if (state.dilemma || state.auction || state.nego || !state.tutorialDone) return;
+  if (state.day < 6) return;
+  if (state.day - (state.lastDilemmaDay ?? 0) < 12) return;
+  if (Math.random() > 0.24) return;
+
+  const owned = getOwnedPlots(state);
+  const bestReg = pickBestPlayerRegion(state);
+  const hasUnderConst = owned.some((p) => p.b && p.b.buildLeft > 0);
+  const cheapEmpty = getBulkBuyLandCandidates(state, 'all', false, 'cheapest')[0];
+  const worth = Math.max(1 * BILLION, getNetWorth(state));
+  const scale = Math.min(25, Math.max(1, Math.round(worth / (2 * BILLION))));
+
+  const pool: DilemmaEvent[] = [];
+
+  // 1. Metro / Infrastructure co-investment
+  const metroCost = Math.round((250 * MILLION * Math.min(8, scale)) / (10 * MILLION)) * (10 * MILLION);
+  pool.push({
+    id: `dil-${state.day}-metro`,
+    templateId: 'metro',
+    icon: '🚇',
+    title: `Kêu gọi góp vốn tuyến Metro ${REGION_NAMES[bestReg]}`,
+    region: bestReg,
+    body: `UBND mời doanh nghiệp đồng tài trợ mở rộng hạ tầng tại ${REGION_NAMES[bestReg]}. Nếu tham gia, giá đất khu vực sẽ bật tăng mạnh!`,
+    choices: [
+      {
+        id: 'invest',
+        label: `Góp vốn ${formatMoney(metroCost)}`,
+        desc: `Chỉ số giá đất ${REGION_NAMES[bestReg]} tăng ngay +16%!`,
+        cost: metroCost,
+      },
+      { id: 'skip', label: 'Đứng ngoài quan sát', desc: 'Giữ nguyên tiền mặt, không rủi ro.' },
+    ],
+  });
+
+  // 2. Tropical storm / risk-reward
+  const stormCost = 80 * MILLION * Math.min(5, scale);
+  pool.push({
+    id: `dil-${state.day}-storm`,
+    templateId: 'storm',
+    icon: '🌪️',
+    title: 'Áp thấp nhiệt đới áp sát bờ biển!',
+    region: 'sea',
+    body: 'Dự báo có gió mạnh vào cuối tuần. Bạn có muốn chi tiền gia cố sớm hay đánh cược thời tiết quang đãng?',
+    choices: [
+      {
+        id: 'brace',
+        label: `Gia cố an toàn (${formatMoney(stormCost)})`,
+        desc: `An toàn 100% + nhận thưởng hỗ trợ du lịch +${formatMoney(stormCost * 1.4)}!`,
+        cost: stormCost,
+      },
+      {
+        id: 'gamble',
+        label: 'Đánh cược trời quang (0 đ)',
+        desc: `55% trời đẹp đón khách (+${formatMoney(stormCost * 2)}), 45% mất phí sửa chữa!`,
+      },
+    ],
+  });
+
+  // 3. International Film Crew
+  const filmBase = 180 * MILLION * Math.min(10, scale);
+  pool.push({
+    id: `dil-${state.day}-film`,
+    templateId: 'film_crew',
+    icon: '🎬',
+    title: 'Đoàn làm phim quốc tế thuê bối cảnh!',
+    region: bestReg,
+    body: `Một đoàn phim bom tấn muốn quay cảnh tại khu đô thị ${REGION_NAMES[bestReg]} của bạn trong 5 ngày.`,
+    choices: [
+      {
+        id: 'accept',
+        label: 'Chốt hợp đồng tiêu chuẩn',
+        desc: `Nhận chắc +${formatMoney(filmBase)} & tặng 7 ngày quảng bá khu phố!`,
+      },
+      {
+        id: 'negotiate',
+        label: 'Đòi cát-xê gấp đôi!',
+        desc: `60% ăn đậm +${formatMoney(filmBase * 2.2)}, 40% đoàn đổi địa điểm.`,
+      },
+    ],
+  });
+
+  // 4. Bank Foreclosure Bargain Plot (if empty plot exists)
+  if (cheapEmpty) {
+    const rawCost = getBuyEmptyLandCost(state, cheapEmpty);
+    const dealCost = Math.round((rawCost * 0.65) / MILLION) * MILLION;
+    pool.push({
+      id: `dil-${state.day}-bargain-${cheapEmpty.id}`,
+      templateId: `foreclosure:${cheapEmpty.id}`,
+      icon: '🔥',
+      title: `Đất "ngộp" ngân hàng phát mãi #${cheapEmpty.id}!`,
+      region: cheapEmpty.region,
+      body: `Ngân hàng thanh lý gấp lô #${cheapEmpty.id} (${REGION_NAMES[cheapEmpty.region]}, ${cheapEmpty.area}m²) với giá rẻ hơn thị trường 35%!`,
+      choices: [
+        {
+          id: 'buy',
+          label: `Chốt đơn ngay (${formatMoney(dealCost)})`,
+          desc: `Sở hữu ngay lô #${cheapEmpty.id} (giá gốc ${formatMoney(rawCost)})!`,
+          cost: dealCost,
+        },
+        { id: 'skip', label: 'Bỏ qua cơ hội', desc: 'Để ngân hàng bán cho người khác.' },
+      ],
+    });
+  }
+
+  // 5. Construction Materials Discount (if building under construction)
+  if (hasUnderConst) {
+    const matCost = 100 * MILLION * Math.min(6, scale);
+    pool.push({
+      id: `dil-${state.day}-mat`,
+      templateId: 'materials',
+      icon: '🏗️',
+      title: 'Đợt xả kho vật liệu xây dựng toàn quốc',
+      body: 'Nhà cung cấp lớn giảm giá thép & xi măng trong hôm nay. Bạn có muốn tăng ca đẩy nhanh tiến độ mọi công trình?',
+      choices: [
+        {
+          id: 'rush',
+          label: `Nhập vật liệu tăng ca (${formatMoney(matCost)})`,
+          desc: 'Rút ngắn ngay 4 ngày xây dựng cho TẤT CẢ công trình đang thi công!',
+          cost: matCost,
+        },
+        { id: 'skip', label: 'Giữ tiến độ bình thường', desc: 'Không tốn thêm chi phí.' },
+      ],
+    });
+  }
+
+  // 6. Bank VIP Cashback / Appreciation
+  const giftCash = 160 * MILLION * Math.min(8, scale);
+  pool.push({
+    id: `dil-${state.day}-bank`,
+    templateId: 'bank_vip',
+    icon: '🏦',
+    title: 'Gói ưu đãi Khách hàng VIP từ Ngân hàng',
+    region: bestReg,
+    body: 'Bạn được chọn 1 trong 2 đặc quyền VIP tháng này từ đối tác ngân hàng BDSNH:',
+    choices: [
+      {
+        id: 'rebate',
+        label: state.loans.length ? 'Xóa 10% dư nợ vay + thưởng nóng' : `Nhận thưởng tiết kiệm +${formatMoney(giftCash)}`,
+        desc: state.loans.length
+          ? `Giảm 10% gốc vay hiện tại + cộng thêm ${formatMoney(giftCash * 0.5)} tiền mặt!`
+          : `Cộng thẳng ${formatMoney(giftCash)} vào tài khoản tiết kiệm sinh lãi 5%/năm!`,
+      },
+      {
+        id: 'boost_idx',
+        label: `Kích cầu tín dụng ${REGION_NAMES[bestReg]}`,
+        desc: `Giá đất khu vực ${REGION_NAMES[bestReg]} tăng ngay +9%!`,
+      },
+    ],
+  });
+
+  state.dilemma = pool[Math.floor(Math.random() * pool.length)];
+  state.lastDilemmaDay = state.day;
+}
+
+export function resolveDilemma(
+  state: GameState,
+  choiceId: string
+): { error: string | null; message?: string; positive?: boolean } {
+  const dil = state.dilemma;
+  if (!dil) return { error: 'Không có sự kiện nào đang mở.' };
+  const choice = dil.choices.find((c) => c.id === choiceId);
+  if (!choice) return { error: 'Lựa chọn không hợp lệ.' };
+  if (choice.cost && state.cash < choice.cost) {
+    return { error: `Không đủ tiền mặt (cần ${formatMoney(choice.cost)}).` };
+  }
+
+  const reg = dil.region ?? pickBestPlayerRegion(state);
+  let message = 'Đã bỏ qua sự kiện.';
+  let positive = true;
+
+  if (choice.id === 'skip') {
+    state.dilemma = null;
+    addLog(state, `${dil.icon} ${dil.title}: bạn chọn đứng ngoài quan sát.`);
+    return { error: null, message, positive: true };
+  }
+
+  if (choice.cost) {
+    state.cash -= choice.cost;
+    state.month.expense += choice.cost;
+    state.total.expense += choice.cost;
+  }
+
+  if (dil.templateId === 'metro' && choice.id === 'invest') {
+    state.idx[reg] *= 1.16;
+    message = `🚇 Giá đất ${REGION_NAMES[reg]} vừa bật tăng +16%!`;
+  } else if (dil.templateId === 'storm') {
+    const base = choice.cost || 80 * MILLION;
+    if (choice.id === 'brace') {
+      const reward = Math.round(base * 1.4);
+      state.cash += reward;
+      message = `🛡️ Gia cố an toàn! Nhận thưởng phục hồi du lịch +${formatMoney(reward)}.`;
+    } else if (Math.random() < 0.55) {
+      const bonus = Math.round(160 * MILLION * Math.min(5, Math.max(1, Math.round(getNetWorth(state) / (2 * BILLION)))));
+      state.cash += bonus;
+      message = `☀️ Trời quang mây tạnh! Khách du lịch đổ xô giúp bạn thu thêm +${formatMoney(bonus)}!`;
+    } else {
+      const dmg = Math.round(110 * MILLION * Math.min(5, Math.max(1, Math.round(getNetWorth(state) / (2 * BILLION)))));
+      state.cash -= dmg;
+      state.total.expense += dmg;
+      message = `🌧️ Bão quét qua nhẹ, tốn ${formatMoney(dmg)} chi phí dọn dẹp sửa chữa.`;
+      positive = false;
+    }
+  } else if (dil.templateId === 'film_crew') {
+    const scale = Math.min(10, Math.max(1, Math.round(Math.max(1 * BILLION, getNetWorth(state)) / (2 * BILLION))));
+    const base = 180 * MILLION * scale;
+    if (choice.id === 'accept') {
+      state.cash += base;
+      state.campaigns = state.campaigns.filter((c) => c.region !== reg);
+      state.campaigns.push({ type: 'marketing', region: reg, endDay: state.day + 7 });
+      message = `🎬 Nhận +${formatMoney(base)} & kích hoạt 7 ngày quảng bá tại ${REGION_NAMES[reg]}!`;
+    } else if (Math.random() < 0.6) {
+      const big = Math.round(base * 2.2);
+      state.cash += big;
+      message = `🎬 Đàm phán thành công! Đoàn phim chi hẳn +${formatMoney(big)}!`;
+    } else {
+      message = '🎬 Đoàn phim chê giá cao và chuyển sang thành phố khác mất rồi!';
+      positive = false;
+    }
+  } else if (dil.templateId.startsWith('foreclosure:') && choice.id === 'buy') {
+    const plotId = Number(dil.templateId.split(':')[1]);
+    const plot = state.plots[plotId];
+    if (plot && !plot.owner) {
+      plot.owner = 'me';
+      plot.forSale = false;
+      ensureDailyState(state).boughtToday += 1;
+      message = `🔥 Chốt đơn thần tốc lô #${plot.id} (${REGION_NAMES[plot.region]}) giá hời -35%!`;
+    } else {
+      if (choice.cost) state.cash += choice.cost;
+      message = 'Lô đất vừa có người khác mua mất — đã hoàn lại tiền!';
+    }
+  } else if (dil.templateId === 'materials' && choice.id === 'rush') {
+    const cnt = speedUpAllConstructions(state, 4);
+    message = `⚡ Đã đẩy nhanh 4 ngày thi công cho ${cnt} công trình!`;
+  } else if (dil.templateId === 'bank_vip') {
+    const scale = Math.min(8, Math.max(1, Math.round(Math.max(1 * BILLION, getNetWorth(state)) / (2 * BILLION))));
+    const gift = 160 * MILLION * scale;
+    if (choice.id === 'rebate') {
+      if (state.loans.length) {
+        let reduced = 0;
+        for (const l of state.loans) {
+          const cut = l.remaining * 0.1;
+          l.remaining -= cut;
+          reduced += cut;
+        }
+        state.cash += gift * 0.5;
+        message = `🏦 Đã giảm ${formatMoney(reduced)} nợ vay & cộng thêm +${formatMoney(gift * 0.5)}!`;
+      } else {
+        state.savings += gift;
+        message = `🏦 Đã cộng +${formatMoney(gift)} vào sổ tiết kiệm của bạn!`;
+      }
+    } else {
+      state.idx[reg] *= 1.09;
+      message = `📈 Gói tín dụng giúp giá đất ${REGION_NAMES[reg]} tăng ngay +9%!`;
+    }
+  }
+
+  state.dilemma = null;
+  addLog(state, message);
+  return { error: null, message, positive };
+}
+
+export function getTodayDateKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getYesterdayDateKey(): string {
+  const d = new Date(Date.now() - 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function ensureDailyState(state: GameState): DailyProgress {
+  const today = getTodayDateKey();
+  if (!state.daily) {
+    state.daily = {
+      dateKey: today,
+      streak: 0,
+      checkedIn: false,
+      spinsLeft: 1,
+      boughtToday: 0,
+      builtToday: 0,
+      earnedToday: 0,
+      claimedQuests: [],
+    };
+    return state.daily;
+  }
+
+  if (state.daily.dateKey !== today) {
+    const keptStreak = state.daily.dateKey === getYesterdayDateKey() && state.daily.checkedIn;
+    const prevStreak = keptStreak ? state.daily.streak : 0;
+    state.daily = {
+      dateKey: today,
+      streak: prevStreak >= 7 ? 0 : prevStreak,
+      checkedIn: false,
+      spinsLeft: 1,
+      boughtToday: 0,
+      builtToday: 0,
+      earnedToday: 0,
+      claimedQuests: [],
+    };
+  }
+  return state.daily;
+}
+
+export function getDailyQuestProgress(state: GameState, questId: string): number {
+  const d = ensureDailyState(state);
+  if (questId === 'dq_buy') return d.boughtToday;
+  if (questId === 'dq_build') return d.builtToday;
+  if (questId === 'dq_earn') return d.earnedToday;
+  return 0;
+}
+
+export function getDailyNotificationCount(state: GameState): number {
+  const d = ensureDailyState(state);
+  let count = 0;
+  if (!d.checkedIn) count += 1;
+  if (d.spinsLeft > 0) count += d.spinsLeft;
+  for (const q of DAILY_QUESTS) {
+    if (!d.claimedQuests.includes(q.id) && getDailyQuestProgress(state, q.id) >= q.target) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function claimDailyCheckIn(state: GameState): { error: string | null; summary?: string } {
+  const d = ensureDailyState(state);
+  if (d.checkedIn) return { error: 'Hôm nay bạn đã điểm danh rồi!' };
+
+  const nextDay = (d.streak % 7) + 1;
+  const reward = DAILY_STREAK_REWARDS[nextDay - 1];
+  const worthBonus = Math.min(5 * BILLION, Math.round((getNetWorth(state) * 0.015) / (10 * MILLION)) * (10 * MILLION));
+  const cashGrant = Math.max(reward.baseCash, worthBonus);
+
+  state.cash += cashGrant;
+  d.streak = nextDay;
+  d.checkedIn = true;
+
+  const extras: string[] = [`+${formatMoney(cashGrant)}`];
+  if (reward.speedupDays) {
+    const cnt = speedUpAllConstructions(state, reward.speedupDays);
+    extras.push(`⚡ rút ngắn ${reward.speedupDays} ngày xây (${cnt} công trình)`);
+  }
+  if (reward.marketBoom) {
+    const reg = pickBestPlayerRegion(state);
+    state.idx[reg] *= 1.1;
+    extras.push(`📈 sốt đất ${REGION_NAMES[reg]} +10%`);
+  }
+
+  const summary = `🎁 Điểm danh Ngày ${nextDay}/7: ${extras.join(' · ')}!`;
+  addLog(state, summary);
+  return { error: null, summary };
+}
+
+export function claimDailyQuest(state: GameState, questId: string): { error: string | null; summary?: string } {
+  const d = ensureDailyState(state);
+  const q = DAILY_QUESTS.find((item) => item.id === questId);
+  if (!q) return { error: 'Nhiệm vụ ngày không tồn tại.' };
+  if (d.claimedQuests.includes(questId)) return { error: 'Đã nhận thưởng nhiệm vụ này hôm nay.' };
+  if (getDailyQuestProgress(state, questId) < q.target) return { error: 'Nhiệm vụ chưa hoàn thành.' };
+
+  d.claimedQuests.push(questId);
+  state.cash += q.rewardCash;
+  if (q.rewardSpins > 0) d.spinsLeft += q.rewardSpins;
+
+  const summary = `🎯 Hoàn thành "${q.name}": +${formatMoney(q.rewardCash)}${q.rewardSpins ? ` + ${q.rewardSpins} lượt quay!` : '!'}`;
+  addLog(state, summary);
+  return { error: null, summary };
+}
+
+export function spinLuckyWheel(state: GameState): {
+  error: string | null;
+  prizeIndex?: number;
+  prizeLabel?: string;
+  summary?: string;
+} {
+  const d = ensureDailyState(state);
+  if (d.spinsLeft <= 0) return { error: 'Bạn đã hết lượt quay hôm nay. Hoàn thành nhiệm vụ ngày để nhận thêm!' };
+
+  const totalWeight = LUCKY_WHEEL_PRIZES.reduce((sum, p) => sum + p.weight, 0);
+  let r = Math.random() * totalWeight;
+  let chosenIdx = 0;
+  for (let i = 0; i < LUCKY_WHEEL_PRIZES.length; i++) {
+    r -= LUCKY_WHEEL_PRIZES[i].weight;
+    if (r <= 0) {
+      chosenIdx = i;
+      break;
+    }
+  }
+
+  d.spinsLeft -= 1;
+  const prize = LUCKY_WHEEL_PRIZES[chosenIdx];
+  const worth = getNetWorth(state);
+  let summary = '';
+
+  if (prize.id === 'cash_small') {
+    const grant = Math.max(200 * MILLION, Math.min(3 * BILLION, Math.round((worth * 0.02) / (10 * MILLION)) * (10 * MILLION)));
+    state.cash += grant;
+    summary = `💵 Trúng Lộc Đầu Tư: +${formatMoney(grant)} tiền mặt!`;
+  } else if (prize.id === 'speedup') {
+    const cnt = speedUpAllConstructions(state, 6);
+    if (cnt > 0) {
+      summary = `⚡ Thi Công Thần Tốc: rút ngắn 6 ngày cho ${cnt} công trình đang xây!`;
+    } else {
+      state.cash += 250 * MILLION;
+      summary = '⚡ Thi Công Thần Tốc (chưa có nhà đang xây → quy đổi +250 triệu)!';
+    }
+  } else if (prize.id === 'boom') {
+    const reg = pickBestPlayerRegion(state);
+    state.idx[reg] *= 1.12;
+    summary = `🔥 Cơn Sốt Đất: giá đất tại ${REGION_NAMES[reg]} tăng vọt +12%!`;
+  } else if (prize.id === 'festival') {
+    const reg = pickBestPlayerRegion(state);
+    state.campaigns = state.campaigns.filter((c) => c.region !== reg);
+    state.campaigns.push({ type: 'festival', region: reg, endDay: state.day + 10 });
+    summary = `🎉 Lễ Hội Miễn Phí: +35% doanh thu tại ${REGION_NAMES[reg]} suốt 10 ngày!`;
+  } else if (prize.id === 'savings_gift') {
+    const grant = Math.max(350 * MILLION, Math.min(4 * BILLION, Math.round((worth * 0.025) / (10 * MILLION)) * (10 * MILLION)));
+    state.savings += grant;
+    summary = `🏦 Quà Tiết Kiệm: +${formatMoney(grant)} vào sổ tiết kiệm!`;
+  } else {
+    const grant = Math.max(1 * BILLION, Math.min(12 * BILLION, Math.round((worth * 0.05) / (10 * MILLION)) * (10 * MILLION)));
+    state.cash += grant;
+    summary = `💎 JACKPOT ĐẠI GIA! Nổ hũ +${formatMoney(grant)} tiền mặt!`;
+  }
+
+  addLog(state, `🎡 Vòng quay: ${summary}`);
+  return { error: null, prizeIndex: chosenIdx, prizeLabel: prize.label, summary };
 }
 
 // Compact City Snapshot for Visit Mode (Top 1 / BXH)
@@ -2317,6 +2848,8 @@ export function hydrateGameState(rawObj: unknown): GameState | null {
     if (!['auto', 'spring', 'summer', 'autumn', 'winter'].includes(parsed.seasonMode)) {
       parsed.seasonMode = 'auto';
     }
+    parsed.dilemma ??= null;
+    ensureDailyState(parsed);
     ensureSkylineLandmarks(parsed);
     if (!['off', 'calendar', 'tet'].includes(parsed.tetMode)) {
       parsed.tetMode = 'calendar';

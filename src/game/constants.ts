@@ -730,6 +730,144 @@ export const SEASON_INFO: Record<
   winter: { name: 'Mùa Đông', icon: '❄️', desc: 'Tuyết nhẹ rơi lất phất, sương bạc dịu mắt', months: 'Tháng 10–12' },
 };
 
+// =========================================================================
+// Urban Synergy Combos (Quy hoạch Đô thị thông minh)
+// =========================================================================
+
+export interface SynergyRule {
+  id: string;
+  name: string;
+  icon: string;
+  boost: number;
+  groupA: BuildingType[];
+  groupB: BuildingType[]; // if same as groupA, requires a DIFFERENT type from the group
+  hint: string;
+}
+
+export const SYNERGY_RULES: SynergyRule[] = [
+  {
+    id: 'food_street',
+    name: 'Phố Ẩm Thực',
+    icon: '☕',
+    boost: 0.2,
+    groupA: ['quan_cafe', 'tiem_banh_mi', 'nha_hang', 'cho_truyen_thong'],
+    groupB: ['quan_cafe', 'tiem_banh_mi', 'nha_hang', 'cho_truyen_thong'],
+    hint: 'Đặt Cà phê, Tiệm bánh mì, Nhà hàng hoặc Chợ cạnh nhau (+20%)',
+  },
+  {
+    id: 'tourism_hub',
+    name: 'Tổ Hợp Du Lịch',
+    icon: '🏖️',
+    boost: 0.25,
+    groupA: ['khach_san', 'resort', 'homestay', 'glamping'],
+    groupB: ['ben_du_thuyen', 'khu_vui_choi', 'san_golf', 'spa', 'karaoke', 'rap_phim'],
+    hint: 'Đặt Khách sạn/Resort/Homestay gần Bến du thuyền, Khu vui chơi, Sân golf hoặc Spa (+25%)',
+  },
+  {
+    id: 'model_urban',
+    name: 'Khu Đô Thị Chuẩn Mực',
+    icon: '🏙️',
+    boost: 0.3,
+    groupA: ['nha_cap4', 'nha_pho', 'biet_thu', 'chung_cu'],
+    groupB: ['truong_hoc', 'benh_vien', 'phong_kham', 'sieu_thi', 'trung_tam_tm', 'phong_gym'],
+    hint: 'Đặt Nhà ở/Chung cư gần Trường học, Bệnh viện, Siêu thị hoặc Trung tâm TM (+30%)',
+  },
+  {
+    id: 'tech_logistics',
+    name: 'Trung Tâm Công Nghệ',
+    icon: '⚡',
+    boost: 0.25,
+    groupA: ['van_phong', 'data_center'],
+    groupB: ['kho_logistics', 'dien_mat_troi', 'nha_xuong'],
+    hint: 'Đặt Cao ốc văn phòng / Data Center gần Kho logistics, Điện mặt trời hoặc Nhà xưởng (+25%)',
+  },
+  {
+    id: 'eco_agro',
+    name: 'Nông Nghiệp Sinh Thái',
+    icon: '🌾',
+    boost: 0.2,
+    groupA: ['trang_trai', 'doi_che', 'nha_kinh', 'dam_tom'],
+    groupB: ['trang_trai', 'doi_che', 'nha_kinh', 'dam_tom'],
+    hint: 'Đặt từ 2 loại hình Nông nghiệp khác nhau gần nhau (+20%)',
+  },
+];
+
+export const LANDMARK_SYNERGY_BOOST = 0.35;
+export const MAX_SYNERGY_BOOST = 0.6;
+
+// =========================================================================
+// Daily Check-in Streak, Quests & Lucky Wheel
+// =========================================================================
+
+export const DAILY_STREAK_REWARDS: Array<{
+  day: number;
+  baseCash: number;
+  speedupDays?: number;
+  marketBoom?: boolean;
+  label: string;
+}> = [
+  { day: 1, baseCash: 150 * MILLION, label: '+150 triệu' },
+  { day: 2, baseCash: 300 * MILLION, label: '+300 triệu' },
+  { day: 3, baseCash: 400 * MILLION, speedupDays: 5, label: '+400tr & ⚡5 ngày' },
+  { day: 4, baseCash: 600 * MILLION, label: '+600 triệu' },
+  { day: 5, baseCash: 800 * MILLION, marketBoom: true, label: '+800tr & 📈 Sốt đất' },
+  { day: 6, baseCash: 1.2 * BILLION, label: '+1,2 tỷ' },
+  { day: 7, baseCash: 2.5 * BILLION, speedupDays: 10, label: '🏆 +2,5 tỷ & ⚡10 ngày' },
+];
+
+export interface DailyQuestDef {
+  id: string;
+  name: string;
+  detail: string;
+  target: number;
+  rewardCash: number;
+  rewardSpins: number;
+}
+
+export const DAILY_QUESTS: DailyQuestDef[] = [
+  {
+    id: 'dq_buy',
+    name: 'Mở rộng quỹ đất',
+    detail: 'Mua 2 lô đất hôm nay',
+    target: 2,
+    rewardCash: 150 * MILLION,
+    rewardSpins: 1,
+  },
+  {
+    id: 'dq_build',
+    name: 'Kiến tạo đô thị',
+    detail: 'Xây hoặc nâng cấp 2 công trình hôm nay',
+    target: 2,
+    rewardCash: 250 * MILLION,
+    rewardSpins: 0,
+  },
+  {
+    id: 'dq_earn',
+    name: 'Bậc thầy dòng tiền',
+    detail: 'Thu về 100 triệu doanh thu hôm nay',
+    target: 100 * MILLION,
+    rewardCash: 200 * MILLION,
+    rewardSpins: 1,
+  },
+];
+
+export interface LuckyWheelPrize {
+  id: string;
+  icon: string;
+  label: string;
+  color: string;
+  weight: number;
+}
+
+export const LUCKY_WHEEL_PRIZES: LuckyWheelPrize[] = [
+  { id: 'cash_small', icon: '💵', label: 'Lộc Đầu Tư (+200tr)', color: '#10b981', weight: 28 },
+  { id: 'speedup', icon: '⚡', label: 'Thi Công Thần Tốc (-6 ngày)', color: '#f59e0b', weight: 22 },
+  { id: 'boom', icon: '🔥', label: 'Cơn Sốt Đất (+12% giá)', color: '#ef4444', weight: 16 },
+  { id: 'festival', icon: '🎉', label: 'Lễ Hội Miễn Phí (10 ngày)', color: '#a855f7', weight: 16 },
+  { id: 'savings_gift', icon: '🏦', label: 'Quà Tiết Kiệm (+350tr)', color: '#3b82f6', weight: 12 },
+  { id: 'jackpot', icon: '💎', label: 'JACKPOT (+1 tỷ!)', color: '#eab308', weight: 6 },
+];
+
 export interface MissionDef {
   id: string;
   name: string;
