@@ -18,9 +18,12 @@ import {
 import {
   clearGameState,
   createInitialGameState,
+  getCurrentSeason,
   hydrateGameState,
   saveGameState,
+  setSeasonMode,
 } from '../../game/engine';
+import { SEASON_INFO } from '../../game/constants';
 import {
   linkEmailAccount,
   loadCloudState,
@@ -39,7 +42,7 @@ import {
   store,
   type GraphicsQuality,
 } from '../../game/store';
-import type { GameState } from '../../game/types';
+import type { GameState, SeasonMode } from '../../game/types';
 import { BrandLogo } from '../BrandLogo';
 import { Button } from '../ui';
 
@@ -282,6 +285,59 @@ export function SettingsPanel({
           )}
         </section>
       )}
+
+      {/* 4-Season Weather Cycle Selector */}
+      <section className="space-y-2.5 rounded-2xl bg-secondary p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-sm font-bold">
+            {SEASON_INFO[getCurrentSeason(s)].icon} Chu kỳ 4 Mùa &amp; Thời tiết
+          </div>
+          <span className="rounded-full bg-background/60 px-2 py-0.5 text-[10px] font-semibold text-primary">
+            {SEASON_INFO[getCurrentSeason(s)].name}
+          </span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {SEASON_INFO[getCurrentSeason(s)].desc}. Chọn <b>Tự động 4 mùa</b> để luân chuyển theo năm hoặc khóa mùa yêu
+          thích!
+        </p>
+        <div className="grid grid-cols-5 gap-1">
+          {(
+            [
+              ['auto', '🔄', '4 Mùa'],
+              ['spring', '🌸', 'Xuân'],
+              ['summer', '☀️', 'Hạ'],
+              ['autumn', '🍂', 'Thu'],
+              ['winter', '❄️', 'Đông'],
+            ] as Array<[SeasonMode, string, string]>
+          ).map(([mode, icon, label]) => {
+            const active = (s.seasonMode ?? 'auto') === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setSeasonMode(s, mode);
+                  saveGameState(s);
+                  notifyStore();
+                  onToast(
+                    mode === 'auto'
+                      ? '🔄 Đã bật tự động luân chuyển 4 mùa theo năm!'
+                      : `${icon} Đã khóa thời tiết ${SEASON_INFO[mode].name}!`
+                  );
+                }}
+                className={`flex flex-col items-center justify-center rounded-xl border py-1.5 text-[10px] font-bold transition ${
+                  active
+                    ? 'border-primary bg-primary text-primary-foreground shadow'
+                    : 'border-border bg-background/40 text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <span className="text-sm leading-none">{icon}</span>
+                <span className="mt-0.5 whitespace-nowrap">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Graphics Asset Pack Preset */}
       <section className="rounded-2xl bg-secondary p-3">

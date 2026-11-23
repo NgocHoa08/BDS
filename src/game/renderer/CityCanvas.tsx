@@ -11,15 +11,15 @@ import {
   PALACE_BOUNDS,
   REGION_NAMES,
 } from '../constants';
-import { formatMoney, getLandPrice, getMapHeight, isTetNightActive } from '../engine';
+import { formatMoney, getCurrentSeason, getLandPrice, getMapHeight, isTetNightActive } from '../engine';
 import { getViewState, GRAPHICS_PRESETS, store } from '../store';
-import type { GameState, Plot, RegionId } from '../types';
+import type { GameState, Plot, RegionId, SeasonId } from '../types';
 import {
   createAmbientSystem,
   drawAmbientBoats,
   drawAmbientClouds,
   drawAmbientVehicles,
-  drawFallingAutumnLeaves,
+  drawSeasonalWeather,
   stepAmbientSystem,
 } from './ambientEntities';
 import {
@@ -41,15 +41,47 @@ import {
   type ScenePalette,
 } from './isoPrimitives';
 
-const GROUND_COLORS: Record<RegionId, [string, string]> = {
-  city: ['#d1c6b4', '#c5b9a6'],
-  country: ['#c2b454', '#b6a749'],
-  sea: ['#edd8a3', '#e4cd94'],
-  mountain: ['#828f4e', '#768345'],
-  china: ['#d3c2ae', '#c8b6a1'],
-  laos: ['#b5b459', '#a9a84f'],
-  thailand: ['#dccaa4', '#d1be97'],
-  cambodia: ['#cfa971', '#c39e66'],
+const SEASON_GROUND_COLORS: Record<SeasonId, Record<RegionId, [string, string]>> = {
+  spring: {
+    city: ['#d4ccc0', '#c8c0b3'],
+    country: ['#9ec85d', '#91bc52'],
+    sea: ['#f0dea9', '#e7d39b'],
+    mountain: ['#76a85c', '#699a50'],
+    china: ['#d6c9b8', '#cbbca9'],
+    laos: ['#9ec060', '#91b355'],
+    thailand: ['#dfd0ae', '#d4c4a0'],
+    cambodia: ['#d2b37c', '#c6a770'],
+  },
+  summer: {
+    city: ['#d5cfc4', '#cac4b8'],
+    country: ['#84be4e', '#77b143'],
+    sea: ['#f5e3ac', '#ecd89d'],
+    mountain: ['#5c9a4c', '#508d41'],
+    china: ['#d7c9b6', '#ccbea9'],
+    laos: ['#88b651', '#7ca946'],
+    thailand: ['#e2d3ae', '#d7c7a0'],
+    cambodia: ['#d5b479', '#c9a86d'],
+  },
+  autumn: {
+    city: ['#d1c6b4', '#c5b9a6'],
+    country: ['#c2b454', '#b6a749'],
+    sea: ['#edd8a3', '#e4cd94'],
+    mountain: ['#828f4e', '#768345'],
+    china: ['#d3c2ae', '#c8b6a1'],
+    laos: ['#b5b459', '#a9a84f'],
+    thailand: ['#dccaa4', '#d1be97'],
+    cambodia: ['#cfa971', '#c39e66'],
+  },
+  winter: {
+    city: ['#ced4dc', '#c3cad4'],
+    country: ['#b6c5bb', '#aab9af'],
+    sea: ['#dfd9c8', '#d4cebc'],
+    mountain: ['#9cb1ab', '#8fa59f'],
+    china: ['#ced1d6', '#c2c6cc'],
+    laos: ['#aec0b6', '#a2b4aa'],
+    thailand: ['#d4d3ca', '#c9c8be'],
+    cambodia: ['#c9c2b2', '#bdb6a6'],
+  },
 };
 
 // Dynamic world-space chunk grid (supports unlimited map expansion at 60+ FPS)
@@ -86,19 +118,28 @@ function lerpRgb(c1: [number, number, number], c2: [number, number, number], t: 
   )})`;
 }
 
-// Continuous 24h Autumn sky top/bottom colors + warm golden autumn haze
-function getSkyAtmosphere(hour: number): {
+// Continuous 24h Seasonal sky top/bottom colors + seasonal atmosphere tint
+function getSkyAtmosphere(
+  hour: number,
+  season: SeasonId
+): {
   top: string;
   bottom: string;
   nightFactor: number;
   goldenFactor: number;
+  tint: [number, number, number];
 } {
   const NIGHT_T: [number, number, number] = [20, 26, 54];
   const NIGHT_B: [number, number, number] = [38, 46, 78];
   const DAWN_T: [number, number, number] = [132, 126, 168];
   const DAWN_B: [number, number, number] = [245, 192, 146];
-  const DAY_T: [number, number, number] = [148, 186, 214];
-  const DAY_B: [number, number, number] = [238, 222, 188];
+  const DAY_BY_SEASON: Record<SeasonId, [[number, number, number], [number, number, number], [number, number, number]]> = {
+    spring: [[138, 196, 232], [244, 228, 224], [255, 212, 224]],
+    summer: [[104, 182, 238], [228, 238, 245], [255, 232, 155]],
+    autumn: [[148, 186, 214], [238, 222, 188], [255, 200, 114]],
+    winter: [[136, 160, 188], [218, 228, 238], [210, 230, 250]],
+  };
+  const [DAY_T, DAY_B, tint] = DAY_BY_SEASON[season];
   const DUSK_T: [number, number, number] = [118, 92, 138];
   const DUSK_B: [number, number, number] = [238, 148, 98];
 
@@ -127,7 +168,7 @@ function getSkyAtmosphere(hour: number): {
     top = lerpRgb(DAY_T, DAY_T, 0);
     bottom = lerpRgb(DAY_B, DAY_B, 0);
     nightFactor = 0;
-    goldenFactor = 0.42; // crisp warm autumn sunlight all day
+    goldenFactor = season === 'autumn' ? 0.42 : season === 'winter' ? 0.36 : 0.28;
   } else if (hour < 18.5) {
     const t = (hour - 15.5) / 3;
     top = lerpRgb(DAY_T, DUSK_T, t);
@@ -146,7 +187,7 @@ function getSkyAtmosphere(hour: number): {
     nightFactor = 1;
   }
 
-  return { top, bottom, nightFactor, goldenFactor };
+  return { top, bottom, nightFactor, goldenFactor, tint };
 }
 
 interface CityCanvasProps {
@@ -333,7 +374,14 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       return topY;
     };
 
-    const drawWildTree = (ctx: CanvasRenderingContext2D, cx: number, cy: number, sc = 1, pine = false) => {
+    const drawWildTree = (
+      ctx: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      sc = 1,
+      pine = false,
+      season: SeasonId = 'autumn'
+    ) => {
       ctx.fillStyle = 'rgba(26,18,16,0.22)';
       ctx.beginPath();
       ctx.ellipse(cx + 3 * sc, cy + 2 * sc, 5.8 * sc, 2.8 * sc, 0, 0, 7);
@@ -344,15 +392,37 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       const tone = Math.abs(Math.round(cx * 3 + cy * 5)) % 5;
 
       if (pine) {
-        // Autumn highland trees: mix of evergreen pines, amber larch & maple crimson
-        const sets: Array<[string, string, string]> = [
-          ['#3a5433', '#5a7840', '#8fa34f'],
-          ['#8a4c1f', '#cc7a29', '#edb24c'],
-          ['#7a2f22', '#b84b34', '#df764e'],
-          ['#485c34', '#728541', '#adb252'],
-          ['#915722', '#d68f31', '#f3c65e'],
-        ];
-        const [c0, c1, c2] = sets[tone];
+        const setsBySeason: Record<SeasonId, Array<[string, string, string]>> = {
+          spring: [
+            ['#2f6c3a', '#4c944d', '#7dc468'],
+            ['#c9688b', '#ef98b8', '#ffd2e3'],
+            ['#34733f', '#58a156', '#8cd175'],
+            ['#d47699', '#f7adc7', '#ffe0ec'],
+            ['#3c7a44', '#63ab5d', '#9ad980'],
+          ],
+          summer: [
+            ['#21542c', '#36783c', '#5ca650'],
+            ['#265c30', '#3e8442', '#68b458'],
+            ['#1d4a26', '#2f6d36', '#529848'],
+            ['#2a6434', '#468f48', '#74c060'],
+            ['#23572d', '#3a7e3e', '#62ac53'],
+          ],
+          autumn: [
+            ['#3a5433', '#5a7840', '#8fa34f'],
+            ['#8a4c1f', '#cc7a29', '#edb24c'],
+            ['#7a2f22', '#b84b34', '#df764e'],
+            ['#485c34', '#728541', '#adb252'],
+            ['#915722', '#d68f31', '#f3c65e'],
+          ],
+          winter: [
+            ['#2f4c4a', '#4f7070', '#dce8f2'],
+            ['#365258', '#5e7e86', '#eef6fc'],
+            ['#294344', '#46686c', '#d5e4ef'],
+            ['#3c5960', '#698a92', '#f4f9fd'],
+            ['#2f4b4d', '#547578', '#e3eff8'],
+          ],
+        };
+        const [c0, c1, c2] = setsBySeason[season][tone];
         ctx.fillStyle = c0;
         ctx.beginPath();
         ctx.moveTo(cx, cy - 21 * sc);
@@ -377,15 +447,37 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         return;
       }
 
-      // Urban & countryside golden-red autumn foliage
-      const canopySets: Array<[string, string, string]> = [
-        ['#99541f', '#dd8e2e', '#f5c358'],
-        ['#87371d', '#ca5f2b', '#eb8f48'],
-        ['#782a20', '#ba4232', '#e06c50'],
-        ['#4a6134', '#768c44', '#b0b858'],
-        ['#9e6122', '#e3a137', '#f7d26a'],
-      ];
-      const [d0, d1, d2] = canopySets[tone];
+      const canopyBySeason: Record<SeasonId, Array<[string, string, string]>> = {
+        spring: [
+          ['#c96488', '#f29ab8', '#ffd9e7'],
+          ['#3a7a42', '#64ad5c', '#98d97e'],
+          ['#d47396', '#f7acc7', '#ffe2ee'],
+          ['#33703c', '#58a052', '#89cc72'],
+          ['#c45e82', '#ed92b2', '#ffd2e2'],
+        ],
+        summer: [
+          ['#276132', '#428e45', '#70bf5c'],
+          ['#2d6b38', '#4d9b4d', '#7ccb64'],
+          ['#22572d', '#3a843e', '#64b354'],
+          ['#30703b', '#52a152', '#82d169'],
+          ['#296434', '#469348', '#75c45f'],
+        ],
+        autumn: [
+          ['#99541f', '#dd8e2e', '#f5c358'],
+          ['#87371d', '#ca5f2b', '#eb8f48'],
+          ['#782a20', '#ba4232', '#e06c50'],
+          ['#4a6134', '#768c44', '#b0b858'],
+          ['#9e6122', '#e3a137', '#f7d26a'],
+        ],
+        winter: [
+          ['#546b75', '#7f98a3', '#d9e8f2'],
+          ['#5e7580', '#8fa8b3', '#e8f2fa'],
+          ['#4b616b', '#758e99', '#d2e2ee'],
+          ['#667d88', '#98b1bc', '#eff7fd'],
+          ['#526872', '#8099a4', '#dfecf5'],
+        ],
+      };
+      const [d0, d1, d2] = canopyBySeason[season][tone];
       ctx.fillStyle = d0;
       ctx.beginPath();
       ctx.ellipse(cx + 1.2 * sc, cy - 9 * sc, 6 * sc, 7.2 * sc, 0, 0, 7);
@@ -435,6 +527,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       maxPricePerSqm: number,
       bakeScale: number,
       enableTextures: boolean,
+      season: SeasonId,
       key: string
     ) => {
       const targetW = Math.round(CHUNK_W * bakeScale);
@@ -575,7 +668,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
             continue;
           }
 
-          ctx.fillStyle = GROUND_COLORS[plot.region][(gx + gy) % 2];
+          ctx.fillStyle = SEASON_GROUND_COLORS[season][plot.region][(gx + gy) % 2];
           diamond(ctx, sx, sy);
           ctx.fill();
 
@@ -726,14 +819,14 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
             }
           } else if (plot.kind === 'land') {
             if (plot.region === 'mountain') {
-              drawWildTree(ctx, sx - 8, sy + 14, 0.72, true);
-              drawWildTree(ctx, sx + 9, sy + 21, 0.72, true);
+              drawWildTree(ctx, sx - 8, sy + 14, 0.72, true, season);
+              drawWildTree(ctx, sx + 9, sy + 21, 0.72, true, season);
             }
             if (plot.region === 'sea' && (gx + gy) % 3 === 0) {
               drawBeachPalm(ctx, sx, sy);
             }
             if (plot.region === 'city' && (gx * 7 + gy) % 5 === 0) {
-              drawWildTree(ctx, sx, sy + 17, 0.65, false);
+              drawWildTree(ctx, sx, sy + 17, 0.65, false, season);
             }
           }
         }
@@ -896,7 +989,8 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       const tSec = now / 1000;
       const isNight = state.hour < 6 || state.hour >= 18;
       const tetNight = isTetNightActive(state);
-      const atmo = getSkyAtmosphere(state.hour);
+      const season = getCurrentSeason(state);
+      const atmo = getSkyAtmosphere(state.hour, season);
 
       // 1. Continuous 24h Sky Gradient
       screenCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -917,7 +1011,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
       // 2. Blit visible HiDPI cached world chunks (bake lazily only if dirty!)
       const viewId = store.visiting?.userId ?? 'self';
-      const chunkKey = `${viewId}:${store.version}:${state.plots.length}:${isNight ? 1 : 0}:${state.heatmap ? 1 : 0}:${store.graphicsQuality}`;
+      const chunkKey = `${viewId}:${season}:${store.version}:${state.plots.length}:${isNight ? 1 : 0}:${state.heatmap ? 1 : 0}:${store.graphicsQuality}`;
       let maxPricePerSqm = -1;
 
       screenCtx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * cam.x, dpr * cam.y);
@@ -948,7 +1042,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
                 }
               }
             }
-            bakeChunk(chunk, state, isNight, maxPricePerSqm, preset.bakeScale, preset.textures, chunkKey);
+            bakeChunk(chunk, state, isNight, maxPricePerSqm, preset.bakeScale, preset.textures, season, chunkKey);
           }
           screenCtx.drawImage(chunk.canvas, chunk.wx, chunk.wy, CHUNK_W, CHUNK_H);
         }
@@ -1083,13 +1177,14 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         screenCtx.textAlign = 'start';
       }
 
-      // 4. Atmospheric autumn sunlight & night lighting + radial night blooms
+      // 4. Atmospheric seasonal sunlight/mist & night lighting + radial night blooms
       screenCtx.setTransform(1, 0, 0, 1, 0, 0);
       if (atmo.goldenFactor > 0.02) {
+        const [tr, tg, tb] = atmo.tint;
         const sunGrad = screenCtx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        sunGrad.addColorStop(0, `rgba(255, 205, 118, ${atmo.goldenFactor * 0.17})`);
-        sunGrad.addColorStop(0.55, `rgba(255, 178, 92, ${atmo.goldenFactor * 0.09})`);
-        sunGrad.addColorStop(1, `rgba(215, 128, 72, ${atmo.goldenFactor * 0.05})`);
+        sunGrad.addColorStop(0, `rgba(${tr}, ${tg}, ${tb}, ${atmo.goldenFactor * 0.16})`);
+        sunGrad.addColorStop(0.55, `rgba(${tr}, ${tg}, ${tb}, ${atmo.goldenFactor * 0.08})`);
+        sunGrad.addColorStop(1, `rgba(${tr}, ${tg}, ${tb}, ${atmo.goldenFactor * 0.04})`);
         screenCtx.fillStyle = sunGrad;
         screenCtx.fillRect(0, 0, canvas.width, canvas.height);
       }
@@ -1098,10 +1193,10 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         screenCtx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      // Drifting falling autumn leaves across the screen
+      // Seasonal ambient weather particles (sakura / summer glints / autumn leaves / winter snow)
       if (!reducedMotion && preset.leaves > 0) {
         screenCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawFallingAutumnLeaves(screenCtx, ambient, preset.leaves, cw, ch, atmo.nightFactor);
+        drawSeasonalWeather(screenCtx, ambient, preset.leaves, cw, ch, atmo.nightFactor, season);
       }
 
       // Additive warm streetlamp & landmark glow blooms at night

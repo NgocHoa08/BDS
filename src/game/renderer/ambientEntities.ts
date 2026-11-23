@@ -1,4 +1,5 @@
 import { MAP_H, MAP_W } from '../constants';
+import type { SeasonId } from '../types';
 import { TILE_H, TILE_W, type ScenePalette } from './isoPrimitives';
 
 export interface AmbientVehicle {
@@ -52,6 +53,7 @@ const ROAD_X = [0, 6, 12, 18, 24];
 const ROAD_Y = [0, 6, 12, 18, 24, 30, 36, 42, 48];
 const CAR_COLORS: AmbientVehicle['colorKey'][] = ['vehicle-red', 'vehicle-teal', 'vehicle-gold', 'trim', 'porcelain'];
 const LEAF_COLORS = ['#f5b841', '#e88b35', '#d95f39', '#f2cf66', '#c94c38', '#e59f3c'];
+const PETAL_COLORS = ['#ffb7c5', '#ff9db8', '#ffd6e2', '#f7a1c0', '#ffe8f0', '#f98fb2'];
 
 export function createAmbientSystem(maxVehicles = 56, maxBoats = 12, maxClouds = 10, maxLeaves = 64): AmbientSystem {
   const vehicles: AmbientVehicle[] = [];
@@ -334,45 +336,100 @@ export function drawAmbientClouds(
   }
 }
 
-export function drawFallingAutumnLeaves(
+export function drawSeasonalWeather(
   ctx: CanvasRenderingContext2D,
   sys: AmbientSystem,
   count: number,
   viewW: number,
   viewH: number,
-  nightFactor: number
+  nightFactor: number,
+  season: SeasonId
 ): void {
   const limit = Math.min(count, sys.leaves.length);
   if (limit <= 0) return;
 
-  const alpha = 0.88 - nightFactor * 0.35;
   ctx.save();
-  for (let i = 0; i < limit; i++) {
-    const lf = sys.leaves[i];
-    const px = lf.x * viewW;
-    const py = lf.y * viewH;
-    const tilt = Math.sin(lf.phase) * 0.9;
-    const flutter = 0.45 + Math.abs(Math.cos(lf.phase * 1.3)) * 0.55;
+  if (season === 'spring') {
+    // 🌸 Falling cherry/peach blossom petals
+    const alpha = 0.88 - nightFactor * 0.35;
+    for (let i = 0; i < limit; i++) {
+      const lf = sys.leaves[i];
+      const px = lf.x * viewW;
+      const py = lf.y * viewH;
+      const tilt = Math.sin(lf.phase * 1.1) * 1.1;
+      const flutter = 0.5 + Math.abs(Math.cos(lf.phase * 1.4)) * 0.5;
+      const sz = lf.size * 0.95;
 
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(tilt);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = lf.color;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(tilt);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = PETAL_COLORS[i % PETAL_COLORS.length];
+      ctx.beginPath();
+      ctx.ellipse(-sz * 0.25, 0, sz * 0.72, sz * 0.44 * flutter, 0.3, 0, Math.PI * 2);
+      ctx.ellipse(sz * 0.22, -sz * 0.12, sz * 0.65, sz * 0.38 * flutter, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  } else if (season === 'summer') {
+    // ☀️ Sunlit warm glints during day / firefly sparkles at night
+    const summerLimit = Math.max(8, Math.floor(limit * 0.55));
+    for (let i = 0; i < summerLimit; i++) {
+      const lf = sys.leaves[i];
+      const px = ((lf.x + Math.sin(lf.phase * 0.6) * 0.04 + 1) % 1) * viewW;
+      const py = ((1 - lf.y) % 1) * viewH; // warm air rising gently
+      const pulse = 0.3 + 0.7 * Math.abs(Math.sin(lf.phase * 1.8));
+      const r = nightFactor > 0.35 ? 1.8 + (i % 3) * 0.7 : 1.5 + (i % 3) * 0.8;
 
-    // Tapered autumn leaf silhouette
-    ctx.beginPath();
-    ctx.ellipse(0, 0, lf.size, lf.size * 0.48 * flutter, 0, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.globalAlpha = (nightFactor > 0.35 ? 0.78 : 0.42) * pulse;
+      ctx.fillStyle = nightFactor > 0.35 ? '#e8ff8a' : '#fff8d4';
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (season === 'winter') {
+    // ❄️ Gentle drifting winter snowflakes
+    const alpha = 0.85 - nightFactor * 0.2;
+    for (let i = 0; i < limit; i++) {
+      const lf = sys.leaves[i];
+      const px = lf.x * viewW;
+      const py = lf.y * viewH;
+      const r = 1.4 + (i % 4) * 0.65;
 
-    // Delicate center vein highlight
-    ctx.strokeStyle = 'rgba(255, 248, 220, 0.45)';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(-lf.size * 0.7, 0);
-    ctx.lineTo(lf.size * 0.7, 0);
-    ctx.stroke();
-    ctx.restore();
+      ctx.globalAlpha = alpha * (0.55 + (i % 3) * 0.18);
+      ctx.fillStyle = i % 3 === 0 ? '#ffffff' : '#dceeff';
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // 🍂 Falling golden/amber/crimson autumn leaves
+    const alpha = 0.88 - nightFactor * 0.35;
+    for (let i = 0; i < limit; i++) {
+      const lf = sys.leaves[i];
+      const px = lf.x * viewW;
+      const py = lf.y * viewH;
+      const tilt = Math.sin(lf.phase) * 0.9;
+      const flutter = 0.45 + Math.abs(Math.cos(lf.phase * 1.3)) * 0.55;
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(tilt);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = lf.color;
+
+      ctx.beginPath();
+      ctx.ellipse(0, 0, lf.size, lf.size * 0.48 * flutter, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255, 248, 220, 0.45)';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(-lf.size * 0.7, 0);
+      ctx.lineTo(lf.size * 0.7, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
   ctx.restore();
 }

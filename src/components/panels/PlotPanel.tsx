@@ -19,6 +19,7 @@ import {
   checkForeignPermission,
   demolishBuilding,
   formatMoney,
+  getBuyEmptyLandCost,
   getDailyIncome,
   getDaysUntilNextExpansion,
   getLandPrice,
@@ -27,6 +28,7 @@ import {
   getOwnedPlots,
   getPlotTotalValue,
   getUpgradeCost,
+  hasStaff,
   isCityLandmarkPlot,
   isNearRoad,
   openEtexCard,
@@ -354,10 +356,11 @@ export function PlotPanel({
         {p.kind === 'land' && !p.owner && (
           <button
             className="btn-gold col-span-2"
-            disabled={s.cash < landPrice * 1.005}
+            disabled={s.cash < getBuyEmptyLandCost(s, p)}
             onClick={() => act(() => buyEmptyLand(s, p), 'Đã mua đất! 🎉', p)}
           >
-            Mua {formatMoney(landPrice * 1.005)}
+            Mua {formatMoney(getBuyEmptyLandCost(s, p))}
+            {hasStaff(s, 'super_broker') ? ' (-10% Môi giới)' : ''}
           </button>
         )}
 

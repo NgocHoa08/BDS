@@ -34,6 +34,8 @@ import {
   RATES,
   REGION_INCOME_MOD,
   REGION_NAMES,
+  SEASON_INFO,
+  STAFF_MAP,
   VISA_FEE,
 } from './constants';
 import type {
@@ -51,6 +53,9 @@ import type {
   Plot,
   PlotBuilding,
   RegionId,
+  SeasonId,
+  SeasonMode,
+  StaffId,
   TetMode,
 } from './types';
 
@@ -103,6 +108,93 @@ export function isTetNightActive(state: GameState): boolean {
 
 export function setTetMode(state: GameState, mode: TetMode): null {
   state.tetMode = mode;
+  return null;
+}
+
+// =========================================================================
+// 4-Season Cycle (Spring -> Summer -> Autumn -> Winter, or Lock Any Season)
+// =========================================================================
+
+export function getCalendarSeason(day: number): SeasonId {
+  const dayOfYear = ((Math.max(1, day) - 1) % 360) + 1;
+  if (dayOfYear <= 90) return 'spring';
+  if (dayOfYear <= 180) return 'summer';
+  if (dayOfYear <= 270) return 'autumn';
+  return 'winter';
+}
+
+export function getCurrentSeason(state: GameState): SeasonId {
+  if (state.seasonMode && state.seasonMode !== 'auto') {
+    return state.seasonMode;
+  }
+  return getCalendarSeason(state.day);
+}
+
+export function setSeasonMode(state: GameState, mode: SeasonMode): null {
+  state.seasonMode = mode;
+  return null;
+}
+
+// =========================================================================
+// Management Team (Staff Perks & Salaries)
+// =========================================================================
+
+export function hasStaff(state: GameState, id: StaffId): boolean {
+  return Array.isArray(state.staff) && state.staff.includes(id);
+}
+
+export function getEffectiveBizTaxRate(state: GameState): number {
+  return hasStaff(state, 'tax_expert') ? 0.05 : RATES.bizTax;
+}
+
+export function getEffectiveBuildDays(state: GameState, baseDays: number): number {
+  if (!hasStaff(state, 'architect')) return baseDays;
+  return Math.max(1, Math.round(baseDays * 0.75));
+}
+
+export function getEffectiveLandDiscount(state: GameState): number {
+  return hasStaff(state, 'super_broker') ? 0.9 : 1;
+}
+
+export function getDailyStaffSalary(state: GameState): number {
+  if (!Array.isArray(state.staff)) return 0;
+  return state.staff.reduce((sum, id) => sum + (STAFF_MAP[id]?.dailySalary ?? 0), 0);
+}
+
+export function hireStaff(state: GameState, id: StaffId): string | null {
+  const def = STAFF_MAP[id];
+  if (!def) return 'Nhân sự không hợp lệ.';
+  if (hasStaff(state, id)) return `Bạn đã tuyển ${def.name} rồi.`;
+  if (state.cash < def.hireCost) return `Chưa đủ ${formatMoney(def.hireCost)} phí ký hợp đồng.`;
+
+  state.cash -= def.hireCost;
+  state.staff = [...(state.staff ?? []), id];
+
+  // Super Broker immediately fills all listed unrented residential/office properties
+  if (id === 'super_broker') {
+    let filled = 0;
+    for (const p of getOwnedPlots(state)) {
+      if (p.b && p.b.buildLeft === 0 && !p.b.paused && BUILDINGS[p.b.type].rental && !p.b.rented) {
+        p.b.listed = true;
+        p.b.rented = true;
+        filled += 1;
+      }
+    }
+    addLog(
+      state,
+      `🤝 Tuyển ${def.name} (${formatMoney(def.hireCost)})${filled > 0 ? ` — lấp đầy ngay ${filled} căn cho thuê!` : '.'}`
+    );
+  } else {
+    addLog(state, `${def.icon} Tuyển ${def.name} (${formatMoney(def.hireCost)}, lương ${formatMoney(def.dailySalary)}/ngày).`);
+  }
+  return null;
+}
+
+export function fireStaff(state: GameState, id: StaffId): string | null {
+  const def = STAFF_MAP[id];
+  if (!def || !hasStaff(state, id)) return 'Nhân sự này chưa được tuyển.';
+  state.staff = state.staff.filter((s) => s !== id);
+  addLog(state, `Đã chấm dứt hợp đồng với ${def.name}.`);
   return null;
 }
 
@@ -294,6 +386,8 @@ export function createInitialGameState(): GameState {
     tetMode: 'calendar',
     visas: [],
     etex: false,
+    staff: [],
+    seasonMode: 'auto',
     lastActiveAt: Date.now(),
   };
 
@@ -564,7 +658,7 @@ export function buyEmptyLand(state: GameState, plot: Plot): string | null {
   if (plot.owner || plot.kind !== 'land') return 'Lô đất không khả dụng.';
   const err = checkForeignPermission(state, plot);
   if (err) return err;
-  const price = getLandPrice(state, plot);
+  const price = Math.round(getLandPrice(state, plot) * getEffectiveLandDiscount(state));
   const regFee = price * RATES.regFee;
   const etexFee = getEtexFee(plot, price);
   if (state.cash < price + regFee + etexFee) return 'Không đủ tiền mặt.';
@@ -578,7 +672,7 @@ export function buyEmptyLand(state: GameState, plot: Plot): string | null {
 }
 
 export function getBuyEmptyLandCost(state: GameState, plot: Plot): number {
-  const price = getLandPrice(state, plot);
+  const price = Math.round(getLandPrice(state, plot) * getEffectiveLandDiscount(state));
   return price + price * RATES.regFee + getEtexFee(plot, price);
 }
 
@@ -630,7 +724,7 @@ export function buyBulkEmptyLand(
       firstErr ??= permErr;
       continue;
     }
-    const price = getLandPrice(state, plot);
+    const price = Math.round(getLandPrice(state, plot) * getEffectiveLandDiscount(state));
     const regFee = price * RATES.regFee;
     const etexFee = getEtexFee(plot, price);
     const totalCost = price + regFee + etexFee;
@@ -678,7 +772,7 @@ export function buildOnPlot(state: GameState, plot: Plot, type: BuildingType): s
   plot.b = {
     type,
     level: 1,
-    buildLeft: def.days,
+    buildLeft: getEffectiveBuildDays(state, def.days),
     rented: false,
     listed: def.rental,
   };
@@ -697,7 +791,7 @@ export function upgradeBuilding(state: GameState, plot: Plot): string | null {
   state.cash -= cost;
   chargeEtexFee(state, plot, cost);
   plot.b.level += 1;
-  plot.b.buildLeft = Math.ceil(BUILDINGS[plot.b.type].days / 2);
+  plot.b.buildLeft = getEffectiveBuildDays(state, Math.ceil(BUILDINGS[plot.b.type].days / 2));
   addLog(state, `Nâng cấp ${BUILDINGS[plot.b.type].name} lên cấp ${plot.b.level}.`);
   return null;
 }
@@ -773,7 +867,7 @@ export function buildBulkOnPlots(
     plot.b = {
       type,
       level: 1,
-      buildLeft: def.days,
+      buildLeft: getEffectiveBuildDays(state, def.days),
       rented: false,
       listed: def.rental,
     };
@@ -861,7 +955,7 @@ export function upgradeBulkPlots(
     state.cash -= cost;
     chargeEtexFee(state, plot, cost);
     plot.b.level += 1;
-    plot.b.buildLeft = Math.ceil(BUILDINGS[plot.b.type].days / 2);
+    plot.b.buildLeft = getEffectiveBuildDays(state, Math.ceil(BUILDINGS[plot.b.type].days / 2));
     totalSpent += beforeCash - state.cash;
     upgradedIds.push(id);
   }
@@ -1242,7 +1336,7 @@ export function signBulkInvestments(
     plot.b = {
       type: buildingType,
       level: 1,
-      buildLeft: def.days,
+      buildLeft: getEffectiveBuildDays(state, def.days),
       rented: false,
       listed: def.rental,
     };
@@ -1636,7 +1730,15 @@ export function advanceTime(state: GameState, deltaHours: number): DayTickResult
 
 export function stepDay(state: GameState): DayTickResult {
   const result: DayTickResult = { fx: [], events: [] };
+  const prevSeason = getCurrentSeason(state);
   state.day += 1;
+  const curSeason = getCurrentSeason(state);
+  if (state.seasonMode === 'auto' && curSeason !== prevSeason) {
+    const info = SEASON_INFO[curSeason];
+    const msg = `${info.icon} Sang ${info.name}: ${info.desc}!`;
+    addLog(state, msg);
+    result.events.push(msg);
+  }
 
   // End expired campaigns
   const expired = state.campaigns.filter((c) => state.day >= c.endDay);
@@ -1644,6 +1746,9 @@ export function stepDay(state: GameState): DayTickResult {
     result.events.push(`${CAMPAIGNS[c.type].name} tại ${REGION_NAMES[c.region]} đã kết thúc.`);
   }
   state.campaigns = state.campaigns.filter((c) => state.day < c.endDay);
+
+  const bizTaxRate = getEffectiveBizTaxRate(state);
+  const hasBroker = hasStaff(state, 'super_broker');
 
   // Buildings construction, rental & daily revenue
   let totalMaint = 0;
@@ -1667,7 +1772,11 @@ export function stepDay(state: GameState): DayTickResult {
       continue;
     }
     if (def.rental) {
-      if (plot.b.listed && !plot.b.rented && Math.random() < 0.3 + state.idx[plot.region] * 0.1) {
+      if (hasBroker) {
+        if (plot.b.listed && !plot.b.rented) {
+          plot.b.rented = true;
+        }
+      } else if (plot.b.listed && !plot.b.rented && Math.random() < 0.3 + state.idx[plot.region] * 0.1) {
         plot.b.rented = true;
         addLog(state, `Có khách thuê ${def.name} lô #${plot.id}.`);
       } else if (plot.b.rented && Math.random() < 0.01) {
@@ -1687,11 +1796,12 @@ export function stepDay(state: GameState): DayTickResult {
 
     const inv = getActiveInvestment(state, plot.id);
     if (inv) {
-      const dailyNet = dailyRev * (1 - RATES.bizTax) - plotMaint - (getLandPrice(state, plot) * RATES.landTax) / 30;
+      const dailyNet = dailyRev * (1 - bizTaxRate) - plotMaint - (getLandPrice(state, plot) * RATES.landTax) / 30;
       settleInvestmentDailyProfit(state, inv, dailyNet);
     }
   }
-  if (totalMaint > 0) recordExpense(state, totalMaint);
+  const staffSal = getDailyStaffSalary(state);
+  if (totalMaint + staffSal > 0) recordExpense(state, totalMaint + staffSal);
 
   // Mature investment contracts
   for (const inv of state.investments) {
@@ -1827,7 +1937,7 @@ export function stepDay(state: GameState): DayTickResult {
   // Monthly tax settlement (every 30 days)
   if (state.day % 30 === 0) {
     const landTax = myPlots.reduce((sum, p) => sum + getLandPrice(state, p), 0) * RATES.landTax;
-    const bizTax = state.month.revenue * RATES.bizTax;
+    const bizTax = state.month.revenue * getEffectiveBizTaxRate(state);
     state.cash -= landTax + bizTax;
     state.total.tax += landTax + bizTax;
     state.lastTax = { land: landTax, biz: bizTax, day: state.day };
@@ -1888,6 +1998,7 @@ export function extractCitySnapshot(state: GameState): CitySnapshot {
     v: 1,
     mapH,
     tetMode: state.tetMode,
+    seasonMode: state.seasonMode,
     reclaimed,
     owned,
   };
@@ -1938,6 +2049,7 @@ export function buildVisitedGameState(
   s.hour = 10.5;
   s.cash = Number(meta.cash) || 0;
   s.tetMode = snap.tetMode ?? 'calendar';
+  s.seasonMode = snap.seasonMode ?? 'auto';
   s.paused = true;
   s.tutorialDone = true;
   return s;
@@ -1970,12 +2082,16 @@ export function applyOfflineProgress(state: GameState, now = Date.now()): Offlin
 
   let grossRevenue = 0;
   let maintenance = 0;
+  let staffSalary = 0;
   let taxPaid = 0;
   let investorPaid = 0;
   let loanInterest = 0;
   let savingsInterest = 0;
   const completedBuildings: string[] = [];
   let newPlotsUnlocked = 0;
+  const bizTaxRate = getEffectiveBizTaxRate(state);
+  const hasBroker = hasStaff(state, 'super_broker');
+  const dailyStaffSal = getDailyStaffSalary(state);
 
   const runSlice = (weight: number, isFullDay: boolean) => {
     if (isFullDay) {
@@ -2016,14 +2132,14 @@ export function applyOfflineProgress(state: GameState, now = Date.now()): Offlin
         continue;
       }
       if (def.rental && plot.b.listed && !plot.b.rented) {
-        if (Math.random() < (0.3 + state.idx[plot.region] * 0.1) * weight) {
+        if (hasBroker || Math.random() < (0.3 + state.idx[plot.region] * 0.1) * weight) {
           plot.b.rented = true;
         }
       }
 
       const rev = getDailyIncome(state, plot) * weight;
       const maint = def.maint * plot.b.level * weight;
-      const bizTax = rev * RATES.bizTax;
+      const bizTax = rev * bizTaxRate;
 
       if (rev > 0) {
         state.cash += rev;
@@ -2048,6 +2164,13 @@ export function applyOfflineProgress(state: GameState, now = Date.now()): Offlin
         settleInvestmentDailyProfit(state, inv, dailyNet);
         investorPaid += Math.max(0, inv.investorPaid - prevPaid);
       }
+    }
+
+    if (dailyStaffSal > 0) {
+      const sal = dailyStaffSal * weight;
+      state.cash -= sal;
+      state.total.expense += sal;
+      staffSalary += sal;
     }
 
     if (state.savings > 0) {
@@ -2114,6 +2237,7 @@ export function applyOfflineProgress(state: GameState, now = Date.now()): Offlin
     daysSimulated: totalOfflineDays,
     grossRevenue,
     maintenance,
+    staffSalary,
     taxPaid,
     investorPaid,
     loanInterest,
@@ -2147,6 +2271,10 @@ export function hydrateGameState(rawObj: unknown): GameState | null {
     parsed.etex ??= false;
     parsed.claimedMissions ??= [];
     parsed.campaigns ??= [];
+    parsed.staff = Array.isArray(parsed.staff) ? parsed.staff : [];
+    if (!['auto', 'spring', 'summer', 'autumn', 'winter'].includes(parsed.seasonMode)) {
+      parsed.seasonMode = 'auto';
+    }
     ensureSkylineLandmarks(parsed);
     if (!['off', 'calendar', 'tet'].includes(parsed.tetMode)) {
       parsed.tetMode = 'calendar';

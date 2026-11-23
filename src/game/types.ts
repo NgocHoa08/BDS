@@ -18,6 +18,12 @@ export type PersonaId = 'greedy' | 'fair' | 'easy';
 
 export type TetMode = 'off' | 'calendar' | 'tet';
 
+export type StaffId = 'architect' | 'tax_expert' | 'super_broker';
+
+export type SeasonId = 'spring' | 'summer' | 'autumn' | 'winter';
+
+export type SeasonMode = 'auto' | SeasonId;
+
 export type CampaignType = 'marketing' | 'festival';
 
 export type BuildingType =
@@ -229,6 +235,8 @@ export interface GameState {
   tetMode: TetMode;
   visas: ForeignRegionId[];
   etex: boolean;
+  staff: StaffId[];
+  seasonMode: SeasonMode;
   lastActiveAt?: number;
 }
 
@@ -239,6 +247,7 @@ export interface OfflineReport {
   daysSimulated: number;
   grossRevenue: number;
   maintenance: number;
+  staffSalary: number;
   taxPaid: number;
   investorPaid: number;
   loanInterest: number;
@@ -285,6 +294,7 @@ export interface CitySnapshot {
   v: 1;
   mapH: number;
   tetMode: TetMode;
+  seasonMode?: SeasonMode;
   reclaimed: number[];
   owned: CitySnapshotPlot[];
 }

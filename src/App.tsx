@@ -39,13 +39,14 @@ import { SettingsPanel } from './components/panels/SettingsPanel';
 import { StatsPanel } from './components/panels/StatsPanel';
 import { BottomSheet, Button, type ActionRunner } from './components/ui';
 import { BrandLogo } from './components/BrandLogo';
-import { BUILDINGS, isLandmarkType, MISSIONS, SPEEDS } from './game/constants';
+import { BUILDINGS, isLandmarkType, MISSIONS, SEASON_INFO, SPEEDS } from './game/constants';
 import {
   advanceTime,
   applyOfflineProgress,
   buildVisitedGameState,
   createInitialGameState,
   formatMoney,
+  getCurrentSeason,
   getNetWorth,
   getOwnedPlots,
   loadGameState,
@@ -400,6 +401,8 @@ export default function App() {
   const year = Math.floor((day - 1) / 360) + 1;
   const hr = Math.floor(s.hour);
   const min = Math.floor((s.hour % 1) * 60);
+  const curSeason = getCurrentSeason(s);
+  const seasonInfo = SEASON_INFO[curSeason];
 
   return (
     <div className="relative h-dvh w-full overflow-hidden select-none bg-background text-foreground">
@@ -474,8 +477,13 @@ export default function App() {
 
           <div className="flex items-center justify-between gap-1.5 text-[11px] sm:gap-2 sm:text-xs">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5">
-                <span>🍂</span>
+              <button
+                type="button"
+                onClick={() => setPanel('settings')}
+                title={`${seasonInfo.name} (${s.seasonMode === 'auto' ? 'Tự động 4 mùa' : 'Đang khóa mùa'}) — Chạm để đổi mùa`}
+                className="inline-flex items-center gap-1 truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 hover:brightness-110"
+              >
+                <span>{seasonInfo.icon}</span>
                 <span>{hr >= 6 && hr < 18 ? '☀️' : '🌙'}</span>
                 <span>
                   {String(hr).padStart(2, '0')}:{String(min).padStart(2, '0')}
@@ -485,7 +493,7 @@ export default function App() {
                 <span className="hidden min-[360px]:inline [@media(max-height:520px)]:hidden lg:[@media(max-height:520px)]:inline">
                   · T{((monthIdx - 1) % 12) + 1} · Năm {year}
                 </span>
-              </span>
+              </button>
               {store.showFps && (
                 <button
                   onClick={() => setPanel('settings')}

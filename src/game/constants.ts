@@ -7,6 +7,8 @@ import type {
   GovId,
   PersonaId,
   RegionId,
+  SeasonId,
+  StaffId,
 } from './types';
 
 export const MILLION = 1e6;
@@ -668,6 +670,64 @@ export const CAMPAIGNS: Record<
 > = {
   marketing: { name: 'Quảng bá khu phố', cost: 8 * MILLION, days: 7, boost: 0.2 },
   festival: { name: 'Lễ hội cuối tuần', cost: 20 * MILLION, days: 10, boost: 0.35 },
+};
+
+export interface StaffDef {
+  id: StaffId;
+  name: string;
+  role: string;
+  icon: string;
+  hireCost: number;
+  dailySalary: number;
+  summary: string;
+  perks: string[];
+}
+
+export const STAFF_LIST: StaffDef[] = [
+  {
+    id: 'architect',
+    name: 'Kiến trúc sư trưởng',
+    role: 'Quản lý thi công',
+    icon: '📐',
+    hireCost: 400 * MILLION,
+    dailySalary: 2 * MILLION,
+    summary: 'Giảm 25% thời gian xây dựng và nâng cấp công trình.',
+    perks: ['Giảm 25% thời gian xây mới (cả xây lẻ, xây loạt, gọi vốn)', 'Giảm 25% thời gian nâng cấp Cấp 2 & Cấp 3'],
+  },
+  {
+    id: 'tax_expert',
+    name: 'Chuyên gia thuế',
+    role: 'Tối ưu tài chính',
+    icon: '🧾',
+    hireCost: 600 * MILLION,
+    dailySalary: 3 * MILLION,
+    summary: 'Giảm thuế kinh doanh từ 7% xuống chỉ còn 5%.',
+    perks: ['Thuế kinh doanh giảm mạnh: 7% → 5%', 'Áp dụng cho cả thuế tháng, thu nhập Offline & hợp đồng đầu tư'],
+  },
+  {
+    id: 'super_broker',
+    name: 'Siêu môi giới BĐS',
+    role: 'Săn đất & Cho thuê',
+    icon: '🤝',
+    hireCost: 500 * MILLION,
+    dailySalary: 2.5 * MILLION,
+    summary: 'Tự lấp đầy 100% khách thuê & giảm 10% giá mua đất.',
+    perks: ['Tự động lấp đầy 100% nhà cho thuê, không bao giờ trống khách', 'Giảm 10% giá mua đất trống (cả mua lẻ & mua hàng loạt)'],
+  },
+];
+
+export const STAFF_MAP: Record<StaffId, StaffDef> = Object.fromEntries(
+  STAFF_LIST.map((st) => [st.id, st])
+) as Record<StaffId, StaffDef>;
+
+export const SEASON_INFO: Record<
+  SeasonId,
+  { name: string; icon: string; desc: string; months: string }
+> = {
+  spring: { name: 'Mùa Xuân', icon: '🌸', desc: 'Hoa đào rơi nhẹ, cây xanh chồi non rạng rỡ', months: 'Tháng 1–3' },
+  summer: { name: 'Mùa Hạ', icon: '☀️', desc: 'Nắng biển rực rỡ, ánh nắng vàng lấp lánh', months: 'Tháng 4–6' },
+  autumn: { name: 'Mùa Thu', icon: '🍂', desc: 'Tiết trời thu êm dịu, lá vàng rơi lả tả', months: 'Tháng 7–9' },
+  winter: { name: 'Mùa Đông', icon: '❄️', desc: 'Tuyết nhẹ rơi lất phất, sương bạc dịu mắt', months: 'Tháng 10–12' },
 };
 
 export interface MissionDef {

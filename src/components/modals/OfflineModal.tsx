@@ -87,6 +87,9 @@ export function OfflineModal({
           {report.maintenance > 0 && (
             <StatRow k="Chi phí bảo trì" v={'-' + formatMoney(report.maintenance)} c="text-amber-300" />
           )}
+          {report.staffSalary > 0 && (
+            <StatRow k="Lương đội ngũ quản lý" v={'-' + formatMoney(report.staffSalary)} c="text-amber-300" />
+          )}
           {report.taxPaid > 0 && (
             <StatRow k="Thuế đất & kinh doanh" v={'-' + formatMoney(report.taxPaid)} c="text-amber-300" />
           )}
