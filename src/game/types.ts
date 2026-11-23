@@ -67,7 +67,20 @@ export type BuildingType =
   | 'minh_chau'
   | 'that_luang'
   | 'wat_arun'
-  | 'angkor';
+  | 'angkor'
+  | 'mega_city'
+  | 'mega_airport'
+  | 'mega_park';
+
+export type StockId = 'KLG' | 'PQH' | 'BDS' | 'VBM' | 'TCO' | 'META';
+
+export interface StockHolding {
+  price: number;
+  prevPrice: number;
+  history: number[];
+  shares: number;
+  avgCost: number;
+}
 
 export interface BuildingDef {
   name: string;
@@ -108,6 +121,7 @@ export interface Plot {
   b: PlotBuilding | null;
   gov?: GovId;
   forSale: boolean;
+  megaParentId?: number | null; // set on the 3 satellite plots of a 2x2 Mega-Project
 }
 
 export interface Npc {
@@ -271,6 +285,7 @@ export interface GameState {
   etex: boolean;
   staff: StaffId[];
   seasonMode: SeasonMode;
+  stocks?: Record<StockId, StockHolding>;
   dilemma?: DilemmaEvent | null;
   lastDilemmaDay?: number;
   daily?: DailyProgress;

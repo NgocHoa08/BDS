@@ -1121,3 +1121,150 @@ export function drawStandardBuilding(
     drawStarBadge(ctx, ox, oy + 16 - height - 10, level);
   }
 }
+
+// =========================================================================
+// 2x2 Mega-Projects (Occupying 4 isometric tiles: u,v in [0..2])
+// =========================================================================
+
+export function drawMegaProject2x2(
+  ctx: CanvasRenderingContext2D,
+  ox: number,
+  oy: number,
+  height: number,
+  type: BuildingType,
+  isNight: boolean,
+  pal: ScenePalette,
+  level: number,
+  paint?: BuildingPaint
+) {
+  const { point, slab, block, line, poly } = createIsoHelpers(ctx, ox, oy, pal);
+  const wallTint = paint?.wall;
+  const roofTint = paint?.roof;
+
+  // Grand 2x2 stone/plaza base
+  slab(0.04, 0.04, 1.92, 1.92, 2.2, pal.pavement);
+  slab(0.1, 0.1, 1.8, 1.8, 2.6, type === 'mega_airport' ? '#3a424e' : pal.lawn);
+
+  if (type === 'mega_city') {
+    // 🏙️ Đại Đô Thị MegaCity: Twin skyscrapers + central skybridge + courtyard fountain
+    slab(0.18, 0.18, 1.64, 1.64, 3.2, '#e8e2d5');
+    // Central park & pool
+    slab(0.75, 0.75, 0.5, 0.5, 3.5, pal.pool);
+    // Podium wings
+    block(0.16, 0.2, 0.65, 1.55, 18, wallTint ? shadeHex(wallTint, 0.05) : '#dfe7ef', wallTint ? shadeHex(wallTint, -0.15) : '#aebcc9', roofTint ?? '#d4a63a', 3);
+    block(1.18, 0.2, 0.65, 1.55, 18, wallTint ? shadeHex(wallTint, 0.05) : '#dfe7ef', wallTint ? shadeHex(wallTint, -0.15) : '#aebcc9', roofTint ?? '#d4a63a', 3);
+
+    const towerH = height * 0.85;
+    const tL = wallTint ?? (isNight ? '#3d6386' : '#6ea8cf');
+    const tR = shadeHex(tL, -0.22);
+    const tTop = roofTint ?? '#f0c44d';
+
+    // North-West Twin Tower
+    block(0.24, 0.3, 0.48, 0.52, towerH, tL, tR, tTop, 21);
+    // South-East Twin Tower
+    block(1.24, 1.12, 0.48, 0.52, towerH * 0.92, tL, tR, tTop, 21);
+    // Golden Skybridge linking the twin towers!
+    block(0.62, 0.72, 0.72, 0.48, 9, '#facc15', '#b45309', '#fef08a', 21 + towerH * 0.56);
+
+    // Glowing night window bands
+    const winCol = isNight ? '#fef08a' : 'rgba(255,255,255,0.5)';
+    for (let z = 28; z < 21 + towerH - 8; z += 11) {
+      line(point(0.26, 0.82, z), point(0.7, 0.82, z), winCol, 1.4);
+      line(point(1.26, 1.64, z), point(1.7, 1.64, z), winCol, 1.4);
+    }
+    // Crown spires
+    const [s1x, s1y] = point(0.48, 0.56, 21 + towerH);
+    const [s2x, s2y] = point(1.48, 1.38, 21 + towerH * 0.92);
+    line([s1x, s1y], [s1x, s1y - 16], '#facc15', 2);
+    line([s2x, s2y], [s2x, s2y - 14], '#facc15', 2);
+  } else if (type === 'mega_airport') {
+    // ✈️ Sân Bay Quốc Tế: Runway + terminal + control tower + passenger jet
+    // Asphalt runway along u-axis
+    slab(0.1, 1.18, 1.8, 0.62, 3.0, '#2a303a');
+    // Runway white centerline & threshold stripes
+    for (let i = 0; i < 6; i++) {
+      line(point(0.2 + i * 0.28, 1.49, 3.3), point(0.36 + i * 0.28, 1.49, 3.3), '#f8fafc', 1.6);
+    }
+    line(point(0.16, 1.25, 3.3), point(0.16, 1.72, 3.3), '#facc15', 1.5);
+    line(point(1.84, 1.25, 3.3), point(1.84, 1.72, 3.3), '#facc15', 1.5);
+
+    // Curved modern glass terminal building
+    const termWall = wallTint ?? '#e2e8f0';
+    const termRoof = roofTint ?? '#38bdf8';
+    block(0.18, 0.2, 1.15, 0.65, 22, termWall, shadeHex(termWall, -0.2), termRoof, 3);
+    // Boarding jetbridges
+    block(0.38, 0.85, 0.12, 0.26, 8, '#cbd5e1', '#94a3b8', '#f8fafc', 3);
+    block(0.88, 0.85, 0.12, 0.26, 8, '#cbd5e1', '#94a3b8', '#f8fafc', 3);
+
+    // Tall ATC Control Tower
+    block(1.48, 0.26, 0.26, 0.26, 52, '#f1f5f9', '#94a3b8', '#38bdf8', 3);
+    block(1.4, 0.18, 0.42, 0.42, 11, isNight ? '#fef08a' : '#7dd3fc', '#0284c7', '#f8fafc', 55);
+    const [rx, ry] = point(1.61, 0.39, 66);
+    line([rx, ry], [rx, ry - 10], '#facc15', 1.8);
+
+    // White Passenger Jet on the runway!
+    const [jx, jy] = point(0.95, 1.48, 4.5);
+    poly([[jx - 18, jy - 8], [jx + 16, jy + 8], [jx + 12, jy + 11], [jx - 20, jy - 5]], '#ffffff');
+    poly([[jx - 4, jy - 1], [jx + 10, jy - 12], [jx + 14, jy - 10], [jx + 2, jy + 2]], '#e2e8f0');
+    poly([[jx - 6, jy + 1], [jx - 20, jy + 10], [jx - 15, jy + 12], [jx, jy + 3]], '#cbd5e1');
+    poly([[jx - 18, jy - 7], [jx - 22, jy - 16], [jx - 15, jy - 12]], '#ef4444');
+  } else {
+    // 🎡 Siêu Công Viên Giải Trí: Giant Ferris wheel + castle pavilion + colorful attractions
+    slab(0.14, 0.14, 1.72, 1.72, 3.0, '#6bbf59');
+    slab(0.55, 0.55, 0.9, 0.9, 3.3, '#f3e5c3');
+    // Central fountain
+    slab(0.84, 0.84, 0.32, 0.32, 3.8, '#38bdf8');
+    // Castle / Circus Pavilions
+    block(0.2, 0.2, 0.5, 0.5, 24, wallTint ?? '#fde68a', '#d97706', roofTint ?? '#ef4444', 3);
+    block(1.3, 1.25, 0.48, 0.48, 20, '#fbcfe8', '#db2777', '#9333ea', 3);
+    block(0.22, 1.25, 0.48, 0.48, 16, '#bae6fd', '#0284c7', '#f59e0b', 3);
+
+    // Giant Glowing Ferris Wheel!
+    const [wx, wy] = point(1.32, 0.5, 42);
+    const [bx1, by1] = point(1.18, 0.62, 3);
+    const [bx2, by2] = point(1.46, 0.38, 3);
+    line([bx1, by1], [wx, wy], '#cbd5e1', 2.4);
+    line([bx2, by2], [wx, wy], '#cbd5e1', 2.4);
+
+    ctx.save();
+    ctx.strokeStyle = isNight ? '#fde047' : '#f59e0b';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(wx, wy, 24, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.8;
+    const cabinCols = ['#ef4444', '#3b82f6', '#10b981', '#eab308', '#ec4899', '#8b5cf6', '#f97316', '#06b6d4'];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const gx = wx + Math.cos(a) * 24;
+      const gy = wy + Math.sin(a) * 24;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy);
+      ctx.lineTo(gx, gy);
+      ctx.stroke();
+      ctx.fillStyle = cabinCols[i % cabinCols.length];
+      ctx.beginPath();
+      ctx.arc(gx, gy, 3.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Golden Prestige Border around the 2x2 footprint
+  const [c0, c1, c2, c3] = [point(0.05, 0.05, 3), point(1.95, 0.05, 3), point(1.95, 1.95, 3), point(0.05, 1.95, 3)];
+  ctx.strokeStyle = '#facc15';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(c0[0], c0[1]);
+  ctx.lineTo(c1[0], c1[1]);
+  ctx.lineTo(c2[0], c2[1]);
+  ctx.lineTo(c3[0], c3[1]);
+  ctx.closePath();
+  ctx.stroke();
+
+  if (level > 1) {
+    const [bx, by] = point(1, 1, height + 8);
+    drawStarBadge(ctx, bx, by, level);
+  }
+}

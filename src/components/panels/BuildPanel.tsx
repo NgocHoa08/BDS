@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpCircle, CheckSquare, Hammer, Layers, Square } from 'lucide-react';
-import { BUILDABLE_TYPES, BUILDINGS, REGION_NAMES } from '../../game/constants';
+import { ArrowUpCircle, Castle, CheckSquare, Hammer, Layers, Square } from 'lucide-react';
+import { BUILDABLE_TYPES, BUILDINGS, MEGA_PROJECT_TYPES, REGION_NAMES } from '../../game/constants';
 import {
   buildBulkOnPlots,
+  buildMegaProject,
   buildOnPlot,
+  buyMega2x2Cluster,
   canBuildInPlot,
   checkForeignPermission,
+  findBuyableMegaCluster,
+  findOwnedMegaClusters,
   formatMoney,
   getActiveInvestment,
   getBuildPlotCost,
@@ -32,7 +36,7 @@ const CATEGORIES = [
   'Y tế & Giáo dục',
 ];
 
-export type BuildPanelTab = 'single' | 'bulk_build' | 'bulk_upgrade';
+export type BuildPanelTab = 'single' | 'bulk_build' | 'bulk_upgrade' | 'mega';
 
 export function BuildPanel({
   s,
@@ -71,11 +75,16 @@ export function BuildPanel({
         (pl) =>
           pl.kind === 'land' &&
           !pl.b &&
+          !pl.megaParentId &&
           !getActiveInvestment(s, pl.id) &&
           !checkForeignPermission(s, pl)
       ),
     [ownedPlots, s]
   );
+
+  const ownedMegaClusters = useMemo(() => findOwnedMegaClusters(s), [s]);
+  const buyableMegaCluster = useMemo(() => findBuyableMegaCluster(s, 'all'), [s]);
+  const [selectedClusterIdx, setSelectedClusterIdx] = useState(0);
 
   const emptyByRegion = useMemo(() => {
     const map = new Map<RegionId, Plot[]>();
@@ -166,7 +175,7 @@ export function BuildPanel({
   return (
     <div className="space-y-3">
       {/* Mode Switcher Tabs */}
-      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-secondary p-1 text-xs font-bold">
+      <div className="grid grid-cols-4 gap-1 rounded-2xl bg-secondary p-1 text-[11px] font-bold">
         <button
           type="button"
           onClick={() => setTab('single')}
@@ -174,7 +183,7 @@ export function BuildPanel({
             tab === 'single' ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Hammer size={13} /> Xây 1 lô
+          <Hammer size={12} /> 1 lô
         </button>
         <button
           type="button"
@@ -185,7 +194,7 @@ export function BuildPanel({
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Layers size={13} /> Xây loạt ({emptyOwnedPlots.length})
+          <Layers size={12} /> Xây ({emptyOwnedPlots.length})
         </button>
         <button
           type="button"
@@ -196,7 +205,18 @@ export function BuildPanel({
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <ArrowUpCircle size={13} /> Nâng loạt ({allUpgradeable.length})
+          <ArrowUpCircle size={12} /> Nâng ({allUpgradeable.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('mega')}
+          className={`flex items-center justify-center gap-1 rounded-xl py-1.5 transition ${
+            tab === 'mega'
+              ? 'bg-primary text-primary-foreground shadow'
+              : 'text-primary/90 hover:text-primary'
+          }`}
+        >
+          <Castle size={12} /> 2×2 ({ownedMegaClusters.length})
         </button>
       </div>
 
@@ -654,6 +674,114 @@ export function BuildPanel({
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* TAB 4: 2x2 MEGA-PROJECTS */}
+      {tab === 'mega' && (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-secondary/75 to-secondary/50 p-3 text-xs">
+            <div className="font-black text-primary">🏰 Gộp 4 lô đất liền kề (2×2) xây Siêu Dự Án</div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Sở hữu 4 ô đất trống hình vuông 2×2 để gộp sổ đỏ dựng Siêu Công Trình 3D khổng lồ với đặc quyền độc nhất!
+            </p>
+            {ownedMegaClusters.length > 0 ? (
+              <div className="mt-2 space-y-1.5">
+                <div className="text-[11px] font-bold text-emerald-300">
+                  ✅ Đang có {ownedMegaClusters.length} cụm đất 2×2 sẵn sàng gộp:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {ownedMegaClusters.slice(0, 6).map((cl, idx) => (
+                    <button
+                      key={cl[0].id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedClusterIdx(idx);
+                        window.dispatchEvent(new CustomEvent('city-focus', { detail: cl[0].id }));
+                      }}
+                      className={`rounded-lg px-2 py-1 text-[11px] font-bold transition ${
+                        selectedClusterIdx === idx
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background/60 text-foreground hover:bg-background'
+                      }`}
+                    >
+                      Cụm #{cl[0].id} · {REGION_NAMES[cl[0].region]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2">
+                {buyableMegaCluster ? (
+                  <button
+                    type="button"
+                    disabled={s.cash < buyableMegaCluster.totalBuyCost}
+                    onClick={() => {
+                      act(() => {
+                        const res = buyMega2x2Cluster(s, 'all');
+                        if (res.error) return res.error;
+                        if (res.anchorId !== undefined) {
+                          window.dispatchEvent(new CustomEvent('city-focus', { detail: res.anchorId }));
+                        }
+                        return null;
+                      }, `🛒 Đã gom xong cụm 2×2 tại ${REGION_NAMES[buyableMegaCluster.cluster[0].region]}!`);
+                    }}
+                    className="btn-gold w-full py-2 text-xs font-black"
+                  >
+                    🛒 Gom nhanh cụm 2×2 rẻ nhất ({REGION_NAMES[buyableMegaCluster.cluster[0].region]} ·{' '}
+                    {formatMoney(buyableMegaCluster.totalBuyCost)})
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-amber-300">
+                    Chưa tìm thấy cụm 2×2 trống khả dụng. Chờ quy hoạch mở rộng thêm đất mới nhé!
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {MEGA_PROJECT_TYPES.map((mType) => {
+              const def = BUILDINGS[mType];
+              const activeCluster = ownedMegaClusters[Math.min(selectedClusterIdx, Math.max(0, ownedMegaClusters.length - 1))];
+              const cost = activeCluster ? getBuildPlotCost(activeCluster[0], mType) : def.cost * 1.02;
+              const perk =
+                mType === 'mega_airport'
+                  ? '✈️ Khánh thành tăng ngay +15% giá đất toàn khu vực!'
+                  : mType === 'mega_city'
+                    ? '🏙️ Tỏa Hào Quang +25% doanh thu cho mọi công trình trong bán kính 3 ô!'
+                    : '🎡 Khánh thành tặng ngay Lễ hội +35% doanh thu suốt 14 ngày!';
+
+              return (
+                <div key={mType} className="rounded-2xl border border-border bg-secondary p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="text-sm">{def.name}</b>
+                    <span className="font-black text-primary">{formatMoney(def.cost)}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    ⏱ {def.days} ngày · 🔧 {formatMoney(def.maint)}/ngày · 💵{' '}
+                    <b className="text-success">~{formatMoney(def.income)}/ngày</b>
+                  </div>
+                  <div className="mt-1.5 rounded-lg bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+                    {perk}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!activeCluster || s.cash < cost}
+                    onClick={() => {
+                      if (!activeCluster) return;
+                      act(() => buildMegaProject(s, activeCluster[0].id, mType), `🏰 Khởi công ${def.name}!`, activeCluster[0]);
+                    }}
+                    className="btn-gold mt-2.5 w-full py-2 text-xs font-black"
+                  >
+                    {activeCluster
+                      ? `🏰 Gộp cụm #${activeCluster[0].id} & Khởi công (${formatMoney(cost)})`
+                      : 'Cần có 1 cụm đất trống 2×2 ở trên'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

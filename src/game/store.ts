@@ -121,9 +121,20 @@ export interface VisitingCity {
   state: GameState;
 }
 
+export interface MapDrop {
+  id: number;
+  plotId: number;
+  x: number;
+  y: number;
+  kind: 'vip' | 'gift' | 'fever';
+  expiresAt: number;
+}
+
 export interface GameStore {
   s: GameState | null;
   visiting: VisitingCity | null;
+  mapDrop: MapDrop | null;
+  feverUntil: number;
   fx: FloatingFx[];
   selected: number | null;
   version: number;
@@ -137,6 +148,8 @@ export interface GameStore {
 export const store: GameStore = {
   s: null,
   visiting: null,
+  mapDrop: null,
+  feverUntil: 0,
   fx: [],
   selected: null,
   version: 0,
@@ -146,6 +159,10 @@ export const store: GameStore = {
   graphicsQuality: initialGfx.quality,
   showFps: initialGfx.showFps,
 };
+
+export function isFeverActive(now = Date.now()): boolean {
+  return store.feverUntil > now;
+}
 
 export function getViewState(): GameState | null {
   return store.visiting?.state ?? store.s;

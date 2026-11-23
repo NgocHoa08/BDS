@@ -5,6 +5,7 @@ import {
   FOREIGN_REGIONS,
   isForeignRegion,
   isLandmarkType,
+  isMegaProjectType,
   isPalaceCoord,
   MAP_H,
   MAP_W,
@@ -24,6 +25,7 @@ import {
 } from './ambientEntities';
 import {
   drawForeignLandmark,
+  drawMegaProject2x2,
   drawSpecialBuilding,
   drawStandardBuilding,
   drawVietnameseTower,
@@ -193,10 +195,11 @@ function getSkyAtmosphere(
 interface CityCanvasProps {
   onTap: (plotId: number | null) => void;
   onPalaceTap: () => void;
+  onMapDropTap?: () => void;
   fpsRef?: React.RefObject<HTMLSpanElement | null>;
 }
 
-export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
+export function CityCanvas({ onTap, onPalaceTap, onMapDropTap, fpsRef }: CityCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const camRef = useRef({
     x: 0,
@@ -219,10 +222,12 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
   const onTapRef = useRef(onTap);
   const onPalaceTapRef = useRef(onPalaceTap);
+  const onMapDropTapRef = useRef(onMapDropTap);
   const fpsSpanRef = useRef(fpsRef);
 
   onTapRef.current = onTap;
   onPalaceTapRef.current = onPalaceTap;
+  onMapDropTapRef.current = onMapDropTap;
   fpsSpanRef.current = fpsRef;
 
   useEffect(() => {
@@ -793,7 +798,28 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
             continue;
           }
 
+          // Render 2x2 Mega-Project cleanly at its frontmost (x+1, y+1) corner for perfect depth sorting!
+          if (plot.megaParentId != null) {
+            const anchor = state.plots[plot.megaParentId];
+            if (anchor?.b && isMegaProjectType(anchor.b.type) && gx === anchor.x + 1 && gy === anchor.y + 1) {
+              const [ax, ay] = toScreen(anchor.x, anchor.y);
+              const def = BUILDINGS[anchor.b.type];
+              if (anchor.b.buildLeft > 0) {
+                const prog = 1 - anchor.b.buildLeft / def.days;
+                drawGovOrScaffoldBox(ctx, ax, ay + TILE_H, Math.max(8, def.height * 0.7 * prog), '#d6c7a1', '#c4a35a', 1.55);
+              } else {
+                const h = def.height * (1 + (anchor.b.level - 1) * 0.25);
+                drawMegaProject2x2(ctx, ax, ay, h, anchor.b.type, isNight, pal, anchor.b.level, anchor.b.paint);
+              }
+            }
+            continue;
+          }
+
           if (plot.b) {
+            if (isMegaProjectType(plot.b.type)) {
+              // Drawn when the (x+1, y+1) satellite renders so all 4 ground tiles sit cleanly underneath
+              continue;
+            }
             const def = BUILDINGS[plot.b.type];
             if (plot.b.buildLeft > 0) {
               const progress = 1 - plot.b.buildLeft / def.days;
@@ -1166,6 +1192,49 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         drawAmbientClouds(screenCtx, ambient, preset.clouds, atmo.nightFactor);
       }
 
+      // Interactive Map Drop (VIP Guest / Gift Chest / Fever x2 Star!)
+      if (!store.visiting && store.mapDrop && store.mapDrop.expiresAt > Date.now()) {
+        const drop = store.mapDrop;
+        const [dx, dy] = toScreen(drop.x, drop.y);
+        if (isVisible(dx, dy, 60)) {
+          const bob = Math.sin(tSec * 4.2) * 4.5;
+          const pulse = 1 + Math.sin(tSec * 5) * 0.16;
+          const cy = dy - 14 + bob;
+          const remainRatio = Math.max(0, Math.min(1, (drop.expiresAt - Date.now()) / 22000));
+          const ringColor =
+            drop.kind === 'fever' ? '#f97316' : drop.kind === 'gift' ? '#a855f7' : '#facc15';
+
+          // Expanding radar pulse ring
+          screenCtx.save();
+          screenCtx.strokeStyle = ringColor;
+          screenCtx.globalAlpha = 0.55;
+          screenCtx.lineWidth = 2;
+          screenCtx.beginPath();
+          screenCtx.arc(dx, cy, 16 * pulse, 0, Math.PI * 2);
+          screenCtx.stroke();
+
+          // Solid dark-gold badge
+          screenCtx.globalAlpha = 0.95;
+          screenCtx.fillStyle = '#111827';
+          screenCtx.beginPath();
+          screenCtx.arc(dx, cy, 13.5, 0, Math.PI * 2);
+          screenCtx.fill();
+
+          // Timer arc
+          screenCtx.strokeStyle = ringColor;
+          screenCtx.lineWidth = 2.6;
+          screenCtx.beginPath();
+          screenCtx.arc(dx, cy, 13.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * remainRatio);
+          screenCtx.stroke();
+
+          screenCtx.font = "14px 'Be Vietnam Pro', sans-serif";
+          screenCtx.textAlign = 'center';
+          screenCtx.textBaseline = 'middle';
+          screenCtx.fillText(drop.kind === 'fever' ? '🔥' : drop.kind === 'gift' ? '🎁' : '💼', dx, cy + 0.5);
+          screenCtx.restore();
+        }
+      }
+
       // Floating FX (+money, Hoàn thành!, Trúng đấu giá!)
       store.fx = store.fx.filter((fx) => now - fx.t < 1800);
       for (const fx of store.fx) {
@@ -1428,6 +1497,19 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       if (prevCount === 1 && dragDist < 8) {
         camRef.current.vx = 0;
         camRef.current.vy = 0;
+        // Check if player tapped the active Golden Map Drop first!
+        if (!store.visiting && store.mapDrop && store.mapDrop.expiresAt > Date.now()) {
+          const rect = canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const [dx, dy] = toScreen(store.mapDrop.x, store.mapDrop.y);
+          const screenX = dx * camRef.current.z + camRef.current.x;
+          const screenY = (dy - 14) * camRef.current.z + camRef.current.y;
+          if (Math.hypot(mx - screenX, my - screenY) <= Math.max(26, 22 * camRef.current.z)) {
+            onMapDropTapRef.current?.();
+            return;
+          }
+        }
         const { gx, gy } = pickTileAt(e.clientX, e.clientY);
         if (isPalaceCoord(gx, gy)) {
           onPalaceTapRef.current();

@@ -21,6 +21,7 @@ import {
   INVESTOR_SHARE,
   isForeignRegion,
   isLandmarkType,
+  isMegaProjectType,
   LANDMARK_PLACEMENTS,
   LANDMARK_SYNERGY_BOOST,
   LUCKY_WHEEL_PRIZES,
@@ -28,6 +29,7 @@ import {
   MAP_W,
   MAX_MAP_H,
   MAX_SYNERGY_BOOST,
+  MEGA_PROJECT_TYPES,
   MILLION,
   MISSIONS,
   NPC_NAMES,
@@ -42,6 +44,8 @@ import {
   REGION_NAMES,
   SEASON_INFO,
   STAFF_MAP,
+  STOCK_LIST,
+  STOCK_MAP,
   SYNERGY_RULES,
   VISA_FEE,
 } from './constants';
@@ -65,6 +69,8 @@ import type {
   SeasonId,
   SeasonMode,
   StaffId,
+  StockHolding,
+  StockId,
   SynergyBonus,
   TetMode,
 } from './types';
@@ -401,6 +407,8 @@ export function createInitialGameState(): GameState {
     lastActiveAt: Date.now(),
   };
 
+  ensureStockMarket(state);
+  ensureDailyState(state);
   ensureSkylineLandmarks(state);
   return state;
 }
@@ -558,15 +566,23 @@ export function getPlotSynergies(state: GameState, plot: Plot): SynergyBonus[] {
     }
   }
 
-  // Landmark Aura within radius 3
-  if (!isLandmarkType(type)) {
-    const nearLandmark = getNeighbors(state, plot, 3).some((n) => n.b && isLandmarkType(n.b.type));
-    if (nearLandmark) {
+  // Landmark & MegaCity Aura within radius 3
+  if (!isLandmarkType(type) && !isMegaProjectType(type)) {
+    const near3 = getNeighbors(state, plot, 3);
+    if (near3.some((n) => n.b && isLandmarkType(n.b.type))) {
       out.push({
         id: 'landmark_aura',
         name: 'Hào Quang Siêu Tháp',
         icon: '👑',
         boost: LANDMARK_SYNERGY_BOOST,
+      });
+    }
+    if (near3.some((n) => n.b && n.b.buildLeft === 0 && n.b.type === 'mega_city')) {
+      out.push({
+        id: 'megacity_aura',
+        name: 'Hào Quang Đại Đô Thị',
+        icon: '🏙️',
+        boost: 0.25,
       });
     }
   }
@@ -617,7 +633,7 @@ export function getRealEstateValue(state: GameState): number {
 }
 
 export function getNetWorth(state: GameState): number {
-  return state.cash + state.savings + getRealEstateValue(state) - getTotalDebt(state);
+  return state.cash + state.savings + getStockPortfolioValue(state) + getRealEstateValue(state) - getTotalDebt(state);
 }
 
 export function getLoanLimit(state: GameState): number {
@@ -702,7 +718,7 @@ export function openEtexCard(state: GameState): string | null {
 }
 
 export function canBuildInPlot(plot: Plot, type: BuildingType): boolean {
-  return !isLandmarkType(type) && BUILDINGS[type].regions.includes(plot.region);
+  return !plot.megaParentId && !isLandmarkType(type) && !isMegaProjectType(type) && BUILDINGS[type].regions.includes(plot.region);
 }
 
 export function getActiveInvestment(state: GameState, plotId: number): Investment | undefined {
@@ -1086,6 +1102,12 @@ export function upgradeBulkPlots(
 export function demolishBuilding(state: GameState, plot: Plot): string | null {
   if (getActiveInvestment(state, plot.id)) return 'Tất toán hợp đồng trước khi phá dỡ.';
   if (plot.owner === 'me' && plot.b) {
+    if (isMegaProjectType(plot.b.type)) {
+      const cluster = getMega2x2Cluster(state, plot.id);
+      if (cluster) {
+        for (let i = 1; i < cluster.length; i++) cluster[i].megaParentId = null;
+      }
+    }
     addLog(state, `Phá dỡ ${BUILDINGS[plot.b.type].name} lô #${plot.id}.`);
     plot.b = null;
   }
@@ -1637,6 +1659,9 @@ export function startSellNegotiation(
   npcId?: string,
   initialOffer?: number
 ): string | null {
+  if (plot.megaParentId || (plot.b && isMegaProjectType(plot.b.type))) {
+    return 'Siêu Dự Án 2×2 là tài sản biểu tượng, không bán lẻ từng lô.';
+  }
   if (getActiveInvestment(state, plot.id)) return 'Tất toán hợp đồng trước khi bán lô đất.';
   const pool = state.npcs.filter((n) => !n.rival || Math.random() < 0.5);
   const npc = (npcId ? getNpcById(state, npcId) : pool[Math.floor(Math.random() * pool.length)]) ?? state.npcs[0];
@@ -1826,17 +1851,17 @@ function stepForeignGovDevelopment(state: GameState): void {
   }
 }
 
-export function advanceTime(state: GameState, deltaHours: number): DayTickResult[] {
+export function advanceTime(state: GameState, deltaHours: number, feverMultiplier = 1): DayTickResult[] {
   const ticks: DayTickResult[] = [];
   state.hour += deltaHours;
   while (state.hour >= 24) {
     state.hour -= 24;
-    ticks.push(stepDay(state));
+    ticks.push(stepDay(state, feverMultiplier));
   }
   return ticks;
 }
 
-export function stepDay(state: GameState): DayTickResult {
+export function stepDay(state: GameState, feverMultiplier = 1): DayTickResult {
   const result: DayTickResult = { fx: [], events: [] };
   const prevSeason = getCurrentSeason(state);
   state.day += 1;
@@ -1867,8 +1892,20 @@ export function stepDay(state: GameState): DayTickResult {
       if (plot.b.buildLeft === 0 && plot.owner === 'me') {
         result.fx.push({ plotId: plot.id, text: 'Hoàn thành!', color: '#ffd166' });
         addLog(state, `${BUILDINGS[plot.b.type].name} lô #${plot.id} đã hoàn thành.`);
-        if (isLandmarkType(plot.b.type)) {
+        if (isLandmarkType(plot.b.type) || isMegaProjectType(plot.b.type)) {
           (result.completedLandmarks ??= []).push(BUILDINGS[plot.b.type].name);
+        }
+        if (plot.b.type === 'mega_airport') {
+          state.idx[plot.region] *= 1.15;
+          const m = `✈️ Sân Bay Quốc Tế khánh thành! Giá đất ${REGION_NAMES[plot.region]} tăng vọt +15%!`;
+          addLog(state, m);
+          result.events.push(m);
+        } else if (plot.b.type === 'mega_park') {
+          state.campaigns = state.campaigns.filter((c) => c.region !== plot.region);
+          state.campaigns.push({ type: 'festival', region: plot.region, endDay: state.day + 14 });
+          const m = `🎡 Siêu Công Viên khánh thành! Lễ hội +35% doanh thu suốt 14 ngày!`;
+          addLog(state, m);
+          result.events.push(m);
         }
       }
       continue;
@@ -1893,10 +1930,14 @@ export function stepDay(state: GameState): DayTickResult {
       }
     }
 
-    const dailyRev = getDailyIncome(state, plot) * (0.8 + Math.random() * 0.4);
+    const dailyRev = getDailyIncome(state, plot) * (0.8 + Math.random() * 0.4) * feverMultiplier;
     if (dailyRev > 0) {
       recordRevenue(state, dailyRev);
-      result.fx.push({ plotId: plot.id, text: '+' + formatMoney(dailyRev), color: '#6ee7a8' });
+      result.fx.push({
+        plotId: plot.id,
+        text: (feverMultiplier > 1 ? '🔥 +' : '+') + formatMoney(dailyRev),
+        color: feverMultiplier > 1 ? '#fde047' : '#6ee7a8',
+      });
     }
 
     const plotMaint = def.maint * plot.b.level;
@@ -2076,6 +2117,9 @@ export function stepDay(state: GameState): DayTickResult {
 
   // Interactive Dilemma Decision Card (every ~12-16 game days)
   maybeSpawnDilemma(state);
+
+  // Live Real-Estate Stock Market daily tick & dividends
+  stepStockMarket(state, result);
 
   state.history.push({ day: state.day, worth: getNetWorth(state), cash: state.cash });
   if (state.history.length > 120) state.history.shift();
@@ -2545,6 +2589,300 @@ export function spinLuckyWheel(state: GameState): {
   return { error: null, prizeIndex: chosenIdx, prizeLabel: prize.label, summary };
 }
 
+// =========================================================================
+// Live Real-Estate Stock Market (Chứng khoán BĐS & Lướt sóng)
+// =========================================================================
+
+export function ensureStockMarket(state: GameState): Record<StockId, StockHolding> {
+  if (!state.stocks) {
+    const map = {} as Record<StockId, StockHolding>;
+    for (const def of STOCK_LIST) {
+      // Seed 12-day sparkline so chart looks alive immediately
+      const hist: number[] = [];
+      let p = def.basePrice;
+      for (let i = 0; i < 12; i++) {
+        p = Math.max(def.basePrice * 0.4, Math.round((p * (1 + (Math.random() - 0.48) * def.volatility)) / 100) * 100);
+        hist.push(p);
+      }
+      map[def.id] = {
+        price: hist[hist.length - 1],
+        prevPrice: hist[hist.length - 2] ?? def.basePrice,
+        history: hist,
+        shares: 0,
+        avgCost: 0,
+      };
+    }
+    state.stocks = map;
+  }
+  return state.stocks;
+}
+
+export function getStockPortfolioValue(state: GameState): number {
+  if (!state.stocks) return 0;
+  let sum = 0;
+  for (const def of STOCK_LIST) {
+    const h = state.stocks[def.id];
+    if (h && h.shares > 0) sum += h.shares * h.price;
+  }
+  return sum;
+}
+
+export function stepStockMarket(state: GameState, result: DayTickResult): void {
+  const stocks = ensureStockMarket(state);
+  const season = getCurrentSeason(state);
+  const avgIdx =
+    (state.idx.city + state.idx.country + state.idx.sea + state.idx.mountain) / 4;
+
+  for (const def of STOCK_LIST) {
+    const h = stocks[def.id];
+    if (!h) continue;
+    h.prevPrice = h.price;
+
+    // Mean-reverting drift + sector flavor
+    const anchor = def.id === 'BDS' ? def.basePrice * avgIdx : def.basePrice * (0.9 + avgIdx * 0.18);
+    const pull = (anchor - h.price) / Math.max(1, anchor) * 0.08;
+    const seasonBias = def.id === 'VBM' ? (season === 'summer' ? 0.012 : season === 'winter' ? -0.006 : 0) : 0;
+    const noise = (Math.random() - 0.485) * 2 * def.volatility;
+    let delta = pull + seasonBias + noise;
+
+    // Thrilling occasional shock (~5% per stock/day -> ~1 market headline every 3-4 days!)
+    if (Math.random() < 0.045) {
+      const surge = Math.random() < 0.56;
+      const shock = (surge ? 1 : -1) * (def.volatility * (1.4 + Math.random() * 1.1));
+      delta += shock;
+      if (Math.abs(shock) >= 0.08) {
+        const pct = Math.round(shock * 100);
+        const msg = surge
+          ? `📈 Cổ phiếu ${def.id} (${def.name}) bùng nổ +${pct}%!`
+          : `📉 Cổ phiếu ${def.id} (${def.name}) lao dốc ${pct}% — cơ hội bắt đáy!`;
+        if (result.events.length < 3) result.events.push(msg);
+      }
+    }
+
+    const minP = Math.round(def.basePrice * 0.25);
+    const maxP = Math.round(def.basePrice * 6.5);
+    h.price = Math.max(minP, Math.min(maxP, Math.round((h.price * (1 + delta)) / 100) * 100));
+    h.history.push(h.price);
+    if (h.history.length > 24) h.history.shift();
+  }
+
+  // Pay dividends every 15 days
+  if (state.day % 15 === 0) {
+    let totalDiv = 0;
+    for (const def of STOCK_LIST) {
+      const h = stocks[def.id];
+      if (h && h.shares > 0 && def.dividendRate > 0) {
+        totalDiv += h.shares * h.price * def.dividendRate;
+      }
+    }
+    if (totalDiv >= 1000) {
+      state.cash += totalDiv;
+      const msg = `💵 Nhận cổ tức chứng khoán kỳ 15 ngày: +${formatMoney(totalDiv)}!`;
+      addLog(state, msg);
+      result.events.push(msg);
+    }
+  }
+}
+
+export function buyStockByBudget(
+  state: GameState,
+  stockId: StockId,
+  budget: number
+): { error: string | null; sharesBought?: number; spent?: number } {
+  const stocks = ensureStockMarket(state);
+  const h = stocks[stockId];
+  const def = STOCK_MAP[stockId];
+  if (!h || !def) return { error: 'Mã cổ phiếu không tồn tại.' };
+
+  const usable = Math.min(state.cash, budget);
+  const shares = Math.floor(usable / h.price);
+  if (shares <= 0) return { error: `Cần tối thiểu ${formatMoney(h.price)} để mua 1 cổ phiếu ${stockId}.` };
+
+  const cost = shares * h.price;
+  const totalCostBefore = h.shares * h.avgCost;
+  h.shares += shares;
+  h.avgCost = (totalCostBefore + cost) / h.shares;
+  state.cash -= cost;
+
+  addLog(state, `📈 Mua ${shares.toLocaleString('vi-VN')} cp ${stockId} giá ${formatMoney(h.price)} (${formatMoney(cost)}).`);
+  return { error: null, sharesBought: shares, spent: cost };
+}
+
+export function sellStockByFraction(
+  state: GameState,
+  stockId: StockId,
+  fraction: number
+): { error: string | null; sharesSold?: number; proceeds?: number; profit?: number } {
+  const stocks = ensureStockMarket(state);
+  const h = stocks[stockId];
+  if (!h || h.shares <= 0) return { error: `Bạn chưa nắm giữ cổ phiếu ${stockId}.` };
+
+  const sharesToSell = fraction >= 0.99 ? h.shares : Math.max(1, Math.floor(h.shares * fraction));
+  const proceeds = sharesToSell * h.price;
+  const profit = (h.price - h.avgCost) * sharesToSell;
+  h.shares -= sharesToSell;
+  if (h.shares <= 0) {
+    h.shares = 0;
+    h.avgCost = 0;
+  }
+  state.cash += proceeds;
+
+  addLog(
+    state,
+    `💰 Bán ${sharesToSell.toLocaleString('vi-VN')} cp ${stockId} thu ${formatMoney(proceeds)} (${profit >= 0 ? '+' : ''}${formatMoney(profit)}).`
+  );
+  return { error: null, sharesSold: sharesToSell, proceeds, profit };
+}
+
+// =========================================================================
+// 2x2 Mega-Projects (Gộp 4 ô đất xây Siêu Dự Án 2x2)
+// =========================================================================
+
+export function getMega2x2Cluster(state: GameState, anchorId: number): Plot[] | null {
+  const anchor = state.plots[anchorId];
+  if (!anchor) return null;
+  const mapH = getMapHeight(state);
+  if (anchor.x + 1 >= MAP_W || anchor.y + 1 >= mapH) return null;
+
+  const p01 = state.plots[anchor.y * MAP_W + (anchor.x + 1)];
+  const p10 = state.plots[(anchor.y + 1) * MAP_W + anchor.x];
+  const p11 = state.plots[(anchor.y + 1) * MAP_W + (anchor.x + 1)];
+  if (!p01 || !p10 || !p11) return null;
+  const group = [anchor, p01, p10, p11];
+  if (group.some((p) => p.kind !== 'land' || p.region !== anchor.region)) return null;
+  return group;
+}
+
+export function findOwnedMegaClusters(state: GameState): Plot[][] {
+  const mapH = getMapHeight(state);
+  const used = new Set<number>();
+  const out: Plot[][] = [];
+
+  for (let y = 0; y < mapH - 1; y++) {
+    for (let x = 0; x < MAP_W - 1; x++) {
+      const id = y * MAP_W + x;
+      if (used.has(id)) continue;
+      const cluster = getMega2x2Cluster(state, id);
+      if (!cluster) continue;
+      if (
+        cluster.every(
+          (p) =>
+            !used.has(p.id) &&
+            p.owner === 'me' &&
+            !p.b &&
+            !p.megaParentId &&
+            !getActiveInvestment(state, p.id) &&
+            !checkForeignPermission(state, p)
+        )
+      ) {
+        out.push(cluster);
+        cluster.forEach((p) => used.add(p.id));
+      }
+    }
+  }
+  return out;
+}
+
+export function findBuyableMegaCluster(
+  state: GameState,
+  regionFilter: RegionId | 'all' = 'all'
+): { cluster: Plot[]; toBuy: Plot[]; totalBuyCost: number } | null {
+  const mapH = getMapHeight(state);
+  let best: { cluster: Plot[]; toBuy: Plot[]; totalBuyCost: number } | null = null;
+
+  for (let y = 0; y < mapH - 1; y++) {
+    for (let x = 0; x < MAP_W - 1; x++) {
+      const cluster = getMega2x2Cluster(state, y * MAP_W + x);
+      if (!cluster) continue;
+      if (regionFilter !== 'all' && cluster[0].region !== regionFilter) continue;
+      if (checkForeignPermission(state, cluster[0])) continue;
+
+      const valid = cluster.every(
+        (p) =>
+          !p.b &&
+          !p.megaParentId &&
+          !getActiveInvestment(state, p.id) &&
+          (p.owner === null || p.owner === 'me')
+      );
+      if (!valid) continue;
+
+      const toBuy = cluster.filter((p) => p.owner === null);
+      if (toBuy.length === 0) continue; // already owned!
+      const totalBuyCost = toBuy.reduce((sum, p) => sum + getBuyEmptyLandCost(state, p), 0);
+      if (!best || totalBuyCost < best.totalBuyCost) {
+        best = { cluster, toBuy, totalBuyCost };
+      }
+    }
+  }
+  return best;
+}
+
+export function buyMega2x2Cluster(
+  state: GameState,
+  regionFilter: RegionId | 'all' = 'all'
+): { error: string | null; anchorId?: number; boughtCount?: number; totalSpent?: number; region?: RegionId } {
+  const found = findBuyableMegaCluster(state, regionFilter);
+  if (!found) return { error: 'Không tìm thấy cụm 2×2 ô trống nào khả dụng ở khu vực này.' };
+  if (state.cash < found.totalBuyCost) {
+    return { error: `Cần ${formatMoney(found.totalBuyCost)} để gom đủ cụm 2×2 (thiếu ${formatMoney(found.totalBuyCost - state.cash)}).` };
+  }
+  const res = buyBulkEmptyLand(
+    state,
+    found.toBuy.map((p) => p.id)
+  );
+  if (res.error) return { error: res.error };
+  return {
+    error: null,
+    anchorId: found.cluster[0].id,
+    boughtCount: res.boughtIds.length,
+    totalSpent: res.totalSpent,
+    region: found.cluster[0].region,
+  };
+}
+
+export function buildMegaProject(
+  state: GameState,
+  anchorId: number,
+  megaType: BuildingType
+): string | null {
+  if (!MEGA_PROJECT_TYPES.includes(megaType)) return 'Không phải Siêu Dự Án 2×2.';
+  const cluster = getMega2x2Cluster(state, anchorId);
+  if (!cluster) return 'Không đủ cụm đất vuông 2×2 hợp lệ.';
+  if (
+    !cluster.every(
+      (p) => p.owner === 'me' && !p.b && !p.megaParentId && !getActiveInvestment(state, p.id)
+    )
+  ) {
+    return 'Cả 4 lô trong cụm 2×2 phải là đất trống của bạn và chưa có hợp đồng đầu tư.';
+  }
+  const anchor = cluster[0];
+  const permErr = checkForeignPermission(state, anchor);
+  if (permErr) return permErr;
+
+  const def = BUILDINGS[megaType];
+  const totalCost = def.cost * (1 + RATES.permit) + getEtexFee(anchor, def.cost);
+  if (state.cash < totalCost) return `Không đủ tiền mặt (cần ${formatMoney(totalCost)}).`;
+
+  state.cash -= def.cost;
+  recordExpense(state, def.cost * RATES.permit);
+  chargeEtexFee(state, anchor, def.cost);
+
+  anchor.b = {
+    type: megaType,
+    level: 1,
+    buildLeft: getEffectiveBuildDays(state, def.days),
+    rented: true,
+    listed: false,
+  };
+  for (let i = 1; i < cluster.length; i++) {
+    cluster[i].megaParentId = anchor.id;
+  }
+
+  ensureDailyState(state).builtToday += 1;
+  addLog(state, `🏰 Gộp 4 lô (#${cluster.map((p) => p.id).join(', ')}) khởi công ${def.name}!`);
+  return null;
+}
+
 // Compact City Snapshot for Visit Mode (Top 1 / BXH)
 export function extractCitySnapshot(state: GameState): CitySnapshot {
   const mapH = getMapHeight(state);
@@ -2613,6 +2951,16 @@ export function buildVisitedGameState(
           listed: false,
           ...(item.b.paint ? { paint: item.b.paint } : {}),
         };
+        if (isMegaProjectType(item.b.type)) {
+          const cluster = getMega2x2Cluster(s, p.id);
+          if (cluster) {
+            for (let i = 1; i < cluster.length; i++) {
+              cluster[i].owner = 'me';
+              cluster[i].b = null;
+              cluster[i].megaParentId = p.id;
+            }
+          }
+        }
       } else {
         p.b = null;
       }
@@ -2849,6 +3197,7 @@ export function hydrateGameState(rawObj: unknown): GameState | null {
       parsed.seasonMode = 'auto';
     }
     parsed.dilemma ??= null;
+    ensureStockMarket(parsed);
     ensureDailyState(parsed);
     ensureSkylineLandmarks(parsed);
     if (!['off', 'calendar', 'tet'].includes(parsed.tetMode)) {

@@ -9,6 +9,7 @@ import type {
   RegionId,
   SeasonId,
   StaffId,
+  StockId,
 } from './types';
 
 export const MILLION = 1e6;
@@ -541,7 +542,44 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     height: 58,
     category: 'Biểu tượng',
   },
+  mega_park: {
+    name: 'Siêu Công Viên Giải Trí (2×2)',
+    cost: 16 * BILLION,
+    days: 22,
+    maint: 12 * MILLION,
+    income: 165 * MILLION,
+    rental: false,
+    regions: ALL_REGIONS,
+    height: 78,
+    category: 'Siêu Dự Án 2×2',
+  },
+  mega_city: {
+    name: 'Đại Đô Thị MegaCity (2×2)',
+    cost: 24 * BILLION,
+    days: 28,
+    maint: 16 * MILLION,
+    income: 235 * MILLION,
+    rental: false,
+    regions: ALL_REGIONS,
+    height: 125,
+    category: 'Siêu Dự Án 2×2',
+  },
+  mega_airport: {
+    name: 'Sân Bay Quốc Tế (2×2)',
+    cost: 36 * BILLION,
+    days: 34,
+    maint: 22 * MILLION,
+    income: 350 * MILLION,
+    rental: false,
+    regions: ALL_REGIONS,
+    height: 68,
+    category: 'Siêu Dự Án 2×2',
+  },
 };
+
+export const MEGA_PROJECT_TYPES: BuildingType[] = ['mega_park', 'mega_city', 'mega_airport'];
+
+export const isMegaProjectType = (type: BuildingType): boolean => MEGA_PROJECT_TYPES.includes(type);
 
 export const LANDMARK_TYPES: BuildingType[] = [
   'thap_81',
@@ -555,7 +593,7 @@ export const LANDMARK_TYPES: BuildingType[] = [
 export const isLandmarkType = (type: BuildingType): boolean => LANDMARK_TYPES.includes(type);
 
 export const BUILDABLE_TYPES: BuildingType[] = (Object.keys(BUILDINGS) as BuildingType[]).filter(
-  (type) => !isLandmarkType(type)
+  (type) => !isLandmarkType(type) && !isMegaProjectType(type)
 );
 
 export const LANDMARK_PLACEMENTS: Array<{ x: number; y: number; type: BuildingType }> = [
@@ -648,7 +686,7 @@ export const RATES = {
   permit: 0.02,
 };
 
-export const SPEEDS = [1, 2] as const;
+export const SPEEDS = [1, 2, 4] as const;
 
 export const OFFLINE_MAX_HOURS = 4;
 export const OFFLINE_MAX_MS = OFFLINE_MAX_HOURS * 3600 * 1000;
@@ -858,6 +896,84 @@ export interface LuckyWheelPrize {
   color: string;
   weight: number;
 }
+
+export interface StockDef {
+  id: StockId;
+  name: string;
+  sector: string;
+  icon: string;
+  basePrice: number; // VND per share
+  volatility: number; // daily move amplitude
+  dividendRate: number; // paid every 15 days
+  riskLabel: string;
+}
+
+export const STOCK_LIST: StockDef[] = [
+  {
+    id: 'KLG',
+    name: 'Tập đoàn Kim Long',
+    sector: 'Địa ốc Bluechip',
+    icon: '🐉',
+    basePrice: 120_000,
+    volatility: 0.045,
+    dividendRate: 0.015,
+    riskLabel: 'Ổn định',
+  },
+  {
+    id: 'PQH',
+    name: 'BĐS Phú Quý',
+    sector: 'Khu đô thị',
+    icon: '🏘️',
+    basePrice: 85_000,
+    volatility: 0.06,
+    dividendRate: 0.012,
+    riskLabel: 'Cân bằng',
+  },
+  {
+    id: 'BDS',
+    name: 'Quỹ BDSNH Index',
+    sector: 'Chỉ số toàn thị trường',
+    icon: '📊',
+    basePrice: 150_000,
+    volatility: 0.035,
+    dividendRate: 0.018,
+    riskLabel: 'An toàn',
+  },
+  {
+    id: 'VBM',
+    name: 'Du lịch Biển Xanh',
+    sector: 'Nghỉ dưỡng & Resort',
+    icon: '🏖️',
+    basePrice: 95_000,
+    volatility: 0.085,
+    dividendRate: 0.01,
+    riskLabel: 'Sóng mùa',
+  },
+  {
+    id: 'TCO',
+    name: 'Hạ Tầng & Thép',
+    sector: 'Vật liệu xây dựng',
+    icon: '🏗️',
+    basePrice: 65_000,
+    volatility: 0.075,
+    dividendRate: 0.011,
+    riskLabel: 'Tăng trưởng',
+  },
+  {
+    id: 'META',
+    name: 'Đất Ảo MetaLand',
+    sector: 'Siêu lướt sóng',
+    icon: '🚀',
+    basePrice: 50_000,
+    volatility: 0.16,
+    dividendRate: 0,
+    riskLabel: 'Rủi ro cao',
+  },
+];
+
+export const STOCK_MAP: Record<StockId, StockDef> = Object.fromEntries(
+  STOCK_LIST.map((st) => [st.id, st])
+) as Record<StockId, StockDef>;
 
 export const LUCKY_WHEEL_PRIZES: LuckyWheelPrize[] = [
   { id: 'cash_small', icon: '💵', label: 'Lộc Đầu Tư (+200tr)', color: '#10b981', weight: 28 },

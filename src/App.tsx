@@ -48,6 +48,7 @@ import {
   applyOfflineProgress,
   buildVisitedGameState,
   createInitialGameState,
+  ensureDailyState,
   formatMoney,
   getCurrentSeason,
   getDailyNotificationCount,
@@ -55,6 +56,7 @@ import {
   getOwnedPlots,
   loadGameState,
   saveGameState,
+  speedUpAllConstructions,
 } from './game/engine';
 import { CityCanvas } from './game/renderer/CityCanvas';
 import {
@@ -75,6 +77,7 @@ import {
   exitVisitMode,
   getViewState,
   GRAPHICS_PRESETS,
+  isFeverActive,
   notifyStore,
   playSfx,
   pushFloatingFx,
@@ -168,7 +171,8 @@ export default function App() {
       last = now;
 
       if (s && !store.visiting && !s.paused && !s.nego && !s.auction && !s.dilemma && s.tutorialDone) {
-        const dayTicks = advanceTime(s, (dt * s.speed * 24) / 12);
+        const feverMult = isFeverActive() ? 2 : 1;
+        const dayTicks = advanceTime(s, (dt * s.speed * 24) / 12, feverMult);
         for (const res of dayTicks) {
           res.fx.forEach((item) => {
             const p = s.plots[item.plotId];
@@ -206,6 +210,36 @@ export default function App() {
       }
     }, 20000);
 
+    // Active Golden Map Drop spawner (VIP Guests / Gift Chests / Fever x2 Stars every ~26s!)
+    let dropSeq = 1;
+    const dropInterval = window.setInterval(() => {
+      const s = store.s;
+      if (!s || !s.tutorialDone || s.paused || store.visiting) return;
+      const nowMs = Date.now();
+      if (store.mapDrop && store.mapDrop.expiresAt <= nowMs) {
+        store.mapDrop = null;
+        notifyStore();
+      }
+      if (!store.mapDrop && Math.random() < 0.55) {
+        const owned = getOwnedPlots(s);
+        const pool = owned.length ? owned : s.plots.filter((p) => p.kind === 'land' && p.x >= 8 && p.x <= 22 && p.y >= 8 && p.y <= 22);
+        if (pool.length) {
+          const target = pool[Math.floor(Math.random() * pool.length)];
+          const roll = Math.random();
+          const kind: 'vip' | 'gift' | 'fever' = roll < 0.45 ? 'vip' : roll < 0.78 ? 'gift' : 'fever';
+          store.mapDrop = {
+            id: dropSeq++,
+            plotId: target.id,
+            x: target.x,
+            y: target.y,
+            kind,
+            expiresAt: nowMs + 22000,
+          };
+          notifyStore();
+        }
+      }
+    }, 9000);
+
     const onFirstGesture = () => {
       if (store.musicEnabled) {
         chillMusic.unlockAndStart(true, store.musicVolume);
@@ -237,6 +271,7 @@ export default function App() {
     return () => {
       cancelAnimationFrame(rafId);
       window.clearInterval(syncInterval);
+      window.clearInterval(dropInterval);
       window.removeEventListener('pointerdown', onFirstGesture);
       window.removeEventListener('keydown', onFirstGesture);
       window.removeEventListener('pagehide', onHide);
@@ -267,6 +302,11 @@ export default function App() {
         notifyStore();
       } else if (e.key === '2') {
         s.speed = 2;
+        s.paused = false;
+        saveGameState(s);
+        notifyStore();
+      } else if (e.key === '3' || e.key === '4') {
+        s.speed = 4;
         s.paused = false;
         saveGameState(s);
         notifyStore();
@@ -388,15 +428,65 @@ export default function App() {
   };
 
   const handlePlotTap = (plotId: number | null) => {
-    store.selected = plotId;
-    notifyStore();
     if (plotId !== null) {
-      const p = viewState.plots[plotId];
+      const raw = viewState.plots[plotId];
+      // Clicking any of the 3 satellite plots of a 2x2 Mega-Project selects its anchor!
+      const resolvedId = raw?.megaParentId != null ? raw.megaParentId : plotId;
+      store.selected = resolvedId;
+      notifyStore();
+      const p = viewState.plots[resolvedId];
       if (p && p.kind !== 'road' && p.kind !== 'water') {
         playSfx('click');
         setPanel('plot');
       }
+    } else {
+      store.selected = null;
+      notifyStore();
     }
+  };
+
+  const handleClaimMapDrop = () => {
+    const drop = store.mapDrop;
+    if (!drop || store.visiting) return;
+    store.mapDrop = null;
+    playSfx('win');
+
+    const worth = getNetWorth(s);
+    if (drop.kind === 'fever') {
+      store.feverUntil = Date.now() + 25000;
+      pushFloatingFx(drop.x, drop.y, '🔥 FEVER x2!', '#f97316');
+      pushToast('🔥 CƠN SỐT GIAO DỊCH! Doanh thu x2 trong 25 giây!');
+    } else if (drop.kind === 'gift') {
+      const roll = Math.random();
+      if (roll < 0.45) {
+        ensureDailyState(s).spinsLeft += 1;
+        pushFloatingFx(drop.x, drop.y, '🎁 +1 Lượt quay!', '#c084fc');
+        pushToast('🎁 Hộp quà bí ẩn: +1 Lượt quay VIP miễn phí!');
+      } else if (roll < 0.78) {
+        const cnt = speedUpAllConstructions(s, 3);
+        if (cnt > 0) {
+          pushFloatingFx(drop.x, drop.y, '⚡ -3 ngày xây!', '#facc15');
+          pushToast(`⚡ Hộp quà thi công: rút ngắn 3 ngày cho ${cnt} công trình!`);
+        } else {
+          const bonus = Math.max(120_000_000, Math.round((worth * 0.015) / 10_000_000) * 10_000_000);
+          s.cash += bonus;
+          pushFloatingFx(drop.x, drop.y, '+' + formatMoney(bonus), '#ffd166');
+          pushToast(`🎁 Hộp quà bất ngờ: +${formatMoney(bonus)} tiền mặt!`);
+        }
+      } else {
+        const bonus = Math.max(150_000_000, Math.round((worth * 0.02) / 10_000_000) * 10_000_000);
+        s.cash += bonus;
+        pushFloatingFx(drop.x, drop.y, '+' + formatMoney(bonus), '#ffd166');
+        pushToast(`🎁 Hộp quà đại gia: +${formatMoney(bonus)} tiền mặt!`);
+      }
+    } else {
+      const tip = Math.max(100_000_000, Math.min(4_000_000_000, Math.round((worth * 0.018) / 10_000_000) * 10_000_000));
+      s.cash += tip;
+      pushFloatingFx(drop.x, drop.y, '💼 +' + formatMoney(tip), '#fde047');
+      pushToast(`💼 Đoàn khách VIP ghé thăm! Thưởng nóng +${formatMoney(tip)}!`);
+    }
+    saveGameState(s);
+    notifyStore();
   };
 
   const selectedPlot = store.selected === null ? null : viewState.plots[store.selected] ?? null;
@@ -412,7 +502,12 @@ export default function App() {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden select-none bg-background text-foreground">
-      <CityCanvas onTap={handlePlotTap} onPalaceTap={() => setPanel('palace')} fpsRef={fpsRef} />
+      <CityCanvas
+        onTap={handlePlotTap}
+        onPalaceTap={() => setPanel('palace')}
+        onMapDropTap={handleClaimMapDrop}
+        fpsRef={fpsRef}
+      />
 
       {/* Unified Top HUD Stack (adapts to ultra-compact single-row in mobile landscape!) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-1.5 px-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))] [@media(max-height:520px)]:gap-1 [@media(max-height:520px)]:pt-1.5">
@@ -600,6 +695,27 @@ export default function App() {
           {s.offers.length > 0 && (
             <button onClick={() => setPanel('dat')} className="btn-ghost px-2.5 py-1 text-xs">
               📩 {s.offers.length} đề nghị mua
+            </button>
+          )}
+          {isFeverActive() && (
+            <span className="inline-flex animate-pulse items-center gap-1 rounded-full border border-orange-400/70 bg-gradient-to-r from-orange-500/35 to-amber-500/35 px-2.5 py-1 text-xs font-black text-amber-200 shadow">
+              🔥 FEVER x2 ({Math.max(1, Math.ceil((store.feverUntil - Date.now()) / 1000))}s)
+            </span>
+          )}
+          {store.mapDrop && store.mapDrop.expiresAt > Date.now() && (
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('city-focus', { detail: store.mapDrop!.plotId }));
+                handleClaimMapDrop();
+              }}
+              className="btn-gold animate-bounce px-2.5 py-1 text-xs font-black shadow-lg"
+            >
+              {store.mapDrop.kind === 'fever'
+                ? '🔥 Bắt Cơn Sốt x2!'
+                : store.mapDrop.kind === 'gift'
+                  ? '🎁 Nhặt Hộp Quà!'
+                  : '💼 Đón Khách VIP!'}
             </button>
           )}
         </div>
