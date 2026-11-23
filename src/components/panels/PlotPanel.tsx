@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Palette, RotateCcw } from 'lucide-react';
+import { Palette, PauseCircle, PlayCircle, RotateCcw } from 'lucide-react';
 import {
   BUILDABLE_TYPES,
   BUILDINGS,
@@ -33,6 +33,7 @@ import {
   paintBuilding,
   startBuyNegotiation,
   startSellNegotiation,
+  toggleBusinessPause,
   toggleRentalListing,
   upgradeBuilding,
 } from '../../game/engine';
@@ -222,6 +223,8 @@ export function PlotPanel({
           <StatRow k="Công trình" v={`${bDef.name} · cấp ${p.b.level}`} />
           {p.b.buildLeft > 0 ? (
             <StatRow k="Đang xây" v={`còn ${p.b.buildLeft} ngày`} c="text-primary" />
+          ) : p.b.paused ? (
+            <StatRow k="Trạng thái" v="⏸ Tạm ngừng kinh doanh (0đ bảo trì)" c="text-amber-400" />
           ) : (
             <StatRow
               k="Thu nhập/ngày"
@@ -389,7 +392,25 @@ export function PlotPanel({
                 {paintOpen ? 'Đóng bảng màu' : '🎨 Sơn màu nhà'}
               </button>
             )}
-            {p.b && bDef?.rental && p.b.buildLeft === 0 && (
+            {p.b && p.b.buildLeft === 0 && (
+              <button
+                type="button"
+                className={`btn-ghost flex items-center justify-center gap-1.5 text-xs ${
+                  p.b.paused ? 'border border-emerald-500/40 text-emerald-400' : 'text-amber-300'
+                }`}
+                onClick={() =>
+                  act(
+                    () => toggleBusinessPause(s, p),
+                    p.b?.paused ? '▶ Đã mở lại kinh doanh!' : '⏸ Đã tạm ngừng kinh doanh (0đ bảo trì)',
+                    p
+                  )
+                }
+              >
+                {p.b.paused ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
+                {p.b.paused ? 'Mở lại kinh doanh' : 'Tạm ngừng KD'}
+              </button>
+            )}
+            {p.b && bDef?.rental && p.b.buildLeft === 0 && !p.b.paused && (
               <button className="btn-ghost text-xs" onClick={() => act(() => toggleRentalListing(p))}>
                 {p.b.listed ? (p.b.rented ? 'Ngừng cho thuê' : 'Hủy đăng thuê') : 'Đăng cho thuê'}
               </button>

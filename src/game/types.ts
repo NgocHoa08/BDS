@@ -86,6 +86,7 @@ export interface PlotBuilding {
   buildLeft: number;
   rented: boolean;
   listed: boolean;
+  paused?: boolean;
   paint?: BuildingPaint;
 }
 

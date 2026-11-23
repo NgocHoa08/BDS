@@ -431,7 +431,7 @@ export function getCampaignBoost(state: GameState, region: RegionId): number {
 }
 
 export function getDailyIncome(state: GameState, plot: Plot): number {
-  if (!plot.b || plot.b.buildLeft > 0) return 0;
+  if (!plot.b || plot.b.buildLeft > 0 || plot.b.paused) return 0;
   const def = BUILDINGS[plot.b.type];
   if (def.rental && !plot.b.rented) return 0;
   const nearbyBuilt = getNeighbors(state, plot, 2).filter((p) => p.b).length;
@@ -893,10 +893,93 @@ export function demolishBuilding(state: GameState, plot: Plot): string | null {
 
 export function toggleRentalListing(plot: Plot): null {
   if (plot.b) {
+    if (plot.b.paused) {
+      plot.b.paused = false;
+      plot.b.listed = true;
+      return null;
+    }
     plot.b.listed = !plot.b.listed;
     if (!plot.b.listed) plot.b.rented = false;
   }
   return null;
+}
+
+export function toggleBusinessPause(state: GameState, plot: Plot): string | null {
+  if (!plot.b || plot.owner !== 'me') return 'Bạn chỉ có thể điều chỉnh công trình của mình.';
+  if (plot.b.buildLeft > 0) return 'Công trình đang xây dựng chưa thể tạm ngừng kinh doanh.';
+
+  const def = BUILDINGS[plot.b.type];
+  const nextPaused = !plot.b.paused;
+
+  if (nextPaused && getActiveInvestment(state, plot.id)) {
+    return 'Không thể tạm ngừng công trình đang có hợp đồng đầu tư.';
+  }
+
+  plot.b.paused = nextPaused;
+  if (nextPaused) {
+    if (def.rental) {
+      plot.b.listed = false;
+      plot.b.rented = false;
+    }
+    addLog(state, `⏸ Tạm ngừng kinh doanh ${def.name} lô #${plot.id} (miễn chi phí bảo trì).`);
+  } else {
+    if (def.rental) {
+      plot.b.listed = true;
+    }
+    addLog(state, `▶ Mở lại kinh doanh ${def.name} lô #${plot.id}.`);
+  }
+  return null;
+}
+
+export function setBulkBusinessPaused(
+  state: GameState,
+  paused: boolean,
+  regionFilter: RegionId | 'all' = 'all'
+): { count: number; skippedInvest: number; error: string | null } {
+  let count = 0;
+  let skippedInvest = 0;
+
+  for (const plot of getOwnedPlots(state)) {
+    if (!plot.b || plot.b.buildLeft > 0) continue;
+    if (regionFilter !== 'all' && plot.region !== regionFilter) continue;
+    if (Boolean(plot.b.paused) === paused) continue;
+
+    if (paused && getActiveInvestment(state, plot.id)) {
+      skippedInvest += 1;
+      continue;
+    }
+
+    const def = BUILDINGS[plot.b.type];
+    plot.b.paused = paused;
+    if (paused && def.rental) {
+      plot.b.listed = false;
+      plot.b.rented = false;
+    } else if (!paused && def.rental) {
+      plot.b.listed = true;
+    }
+    count += 1;
+  }
+
+  if (count === 0) {
+    return {
+      count: 0,
+      skippedInvest,
+      error:
+        skippedInvest > 0
+          ? 'Các công trình đang có hợp đồng đầu tư nên không thể tạm ngừng.'
+          : paused
+            ? 'Không có công trình nào đang hoạt động để tạm ngừng.'
+            : 'Không có công trình nào đang tạm ngừng để mở lại.',
+    };
+  }
+
+  addLog(
+    state,
+    paused
+      ? `⏸ Tạm ngừng kinh doanh hàng loạt ${count} công trình.`
+      : `▶ Mở lại kinh doanh hàng loạt ${count} công trình.`
+  );
+  return { count, skippedInvest, error: null };
 }
 
 export function paintBuilding(
@@ -1386,6 +1469,9 @@ export function stepDay(state: GameState): DayTickResult {
     if (plot.owner !== 'me') continue;
 
     const def = BUILDINGS[plot.b.type];
+    if (plot.b.paused) {
+      continue;
+    }
     if (def.rental) {
       if (plot.b.listed && !plot.b.rented && Math.random() < 0.3 + state.idx[plot.region] * 0.1) {
         plot.b.rented = true;
@@ -1732,6 +1818,9 @@ export function applyOfflineProgress(state: GameState, now = Date.now()): Offlin
       }
 
       const def = BUILDINGS[plot.b.type];
+      if (plot.b.paused) {
+        continue;
+      }
       if (def.rental && plot.b.listed && !plot.b.rented) {
         if (Math.random() < (0.3 + state.idx[plot.region] * 0.1) * weight) {
           plot.b.rented = true;

@@ -978,31 +978,48 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         drawFlag(screenCtx, sx, topY - 2, isForeign ? g.region : 'vietnam', tSec);
       }
 
-      // Active construction cranes + progress bars
+      // Active construction cranes + progress bars & paused business badges
       for (const p of state.plots) {
-        if (!p.b || p.b.buildLeft <= 0) continue;
-        const [sx, sy] = toScreen(p.x, p.y);
-        const def = BUILDINGS[p.b.type];
-        if (!isVisible(sx, sy, def.height + 40)) continue;
+        if (!p.b) continue;
+        if (p.b.buildLeft > 0) {
+          const [sx, sy] = toScreen(p.x, p.y);
+          const def = BUILDINGS[p.b.type];
+          if (!isVisible(sx, sy, def.height + 40)) continue;
 
-        const bob = Math.sin(tSec * 3.5 + p.id) * 2.2;
-        screenCtx.fillStyle = '#f2b705';
-        screenCtx.fillRect(sx + 10, sy + TILE_H - def.height - 14 + bob, 2, 10);
-        // Crane jib arm
-        screenCtx.strokeStyle = '#facc15';
-        screenCtx.lineWidth = 1.2;
-        screenCtx.beginPath();
-        screenCtx.moveTo(sx + 11, sy + TILE_H - def.height - 13 + bob);
-        screenCtx.lineTo(sx - 6 + Math.cos(tSec + p.id) * 4, sy + TILE_H - def.height - 10 + bob);
-        screenCtx.stroke();
+          const bob = Math.sin(tSec * 3.5 + p.id) * 2.2;
+          screenCtx.fillStyle = '#f2b705';
+          screenCtx.fillRect(sx + 10, sy + TILE_H - def.height - 14 + bob, 2, 10);
+          // Crane jib arm
+          screenCtx.strokeStyle = '#facc15';
+          screenCtx.lineWidth = 1.2;
+          screenCtx.beginPath();
+          screenCtx.moveTo(sx + 11, sy + TILE_H - def.height - 13 + bob);
+          screenCtx.lineTo(sx - 6 + Math.cos(tSec + p.id) * 4, sy + TILE_H - def.height - 10 + bob);
+          screenCtx.stroke();
 
-        // Compact build progress bar
-        const pct = Math.max(0.05, Math.min(1, 1 - p.b.buildLeft / def.days));
-        const barY = sy + TILE_H - def.height - 19;
-        screenCtx.fillStyle = 'rgba(15, 20, 32, 0.78)';
-        screenCtx.fillRect(sx - 13, barY, 26, 4);
-        screenCtx.fillStyle = '#facc15';
-        screenCtx.fillRect(sx - 12, barY + 1, 24 * pct, 2);
+          // Compact build progress bar
+          const pct = Math.max(0.05, Math.min(1, 1 - p.b.buildLeft / def.days));
+          const barY = sy + TILE_H - def.height - 19;
+          screenCtx.fillStyle = 'rgba(15, 20, 32, 0.78)';
+          screenCtx.fillRect(sx - 13, barY, 26, 4);
+          screenCtx.fillStyle = '#facc15';
+          screenCtx.fillRect(sx - 12, barY + 1, 24 * pct, 2);
+        } else if (p.owner === 'me' && p.b.paused) {
+          const [sx, sy] = toScreen(p.x, p.y);
+          const h = BUILDINGS[p.b.type].height * (1 + (p.b.level - 1) * 0.35);
+          if (!isVisible(sx, sy, h + 30)) continue;
+          const by = sy + TILE_H - h - 14 + Math.sin(tSec * 2 + p.id) * 1.4;
+          screenCtx.fillStyle = 'rgba(20, 24, 34, 0.86)';
+          screenCtx.beginPath();
+          screenCtx.arc(sx, by, 7.5, 0, Math.PI * 2);
+          screenCtx.fill();
+          screenCtx.strokeStyle = '#f59e0b';
+          screenCtx.lineWidth = 1.2;
+          screenCtx.stroke();
+          screenCtx.fillStyle = '#fbbf24';
+          screenCtx.fillRect(sx - 2.6, by - 3.2, 1.8, 6.4);
+          screenCtx.fillRect(sx + 0.8, by - 3.2, 1.8, 6.4);
+        }
       }
 
       // Vehicles & boats
