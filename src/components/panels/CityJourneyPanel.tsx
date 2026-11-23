@@ -10,17 +10,22 @@ import {
   REGION_NAMES,
 } from '../../game/constants';
 import {
+  buyCityLandmark,
+  checkForeignPermission,
   claimMission,
   formatMoney,
+  getLandmarkBuyoutTotalCost,
   getMissionProgress,
   getNetWorth,
   getPlayerTitle,
   getTetCalendar,
   getPlotTotalValue,
+  isCityLandmarkPlot,
   isTetNightActive,
   launchCampaign,
   setTetMode,
 } from '../../game/engine';
+import { broadcastServerNews } from '../../game/leaderboard';
 import type { CampaignType, GameState, RegionId, TetMode } from '../../game/types';
 import { Button, type ActionRunner } from '../ui';
 
@@ -147,33 +152,80 @@ export function CityJourneyPanel({
           </article>
 
           <section className="space-y-3">
-            <h3 className="font-bold">Công trình biểu tượng</h3>
-            {landmarks.map((plot) => (
-              <article key={plot.id} className="flex items-center justify-between gap-3 border-b border-border pb-3">
-                <div>
-                  <b className="text-sm">{plot.b ? BUILDINGS[plot.b.type].name : ''}</b>
-                  <p className="text-xs text-muted-foreground">
-                    {plot.b?.type === 'thap_81'
-                      ? 'Cảm hứng Landmark 81 · Tháp tầng bậc'
-                      : plot.b?.type === 'thap_sen'
-                        ? 'Cảm hứng Bitexco · Dáng búp sen'
-                        : `${REGION_NAMES[plot.region]} · ${isForeignRegion(plot.region) ? FOREIGN_INFO[plot.region].city : ''}`}
-                  </p>
-                  <p className="mt-1 text-xs text-primary">
-                    Lô #{plot.id} · {formatMoney(getPlotTotalValue(s, plot))}
-                  </p>
-                </div>
-                <Button
-                  aria-label={`Đến ${plot.b ? BUILDINGS[plot.b.type].name : 'tháp'}`}
-                  title="Đến công trình"
-                  size="icon"
-                  variant="outline"
-                  onClick={() => onVisit(plot.id)}
-                >
-                  <Navigation size={16} />
-                </Button>
-              </article>
-            ))}
+            <div>
+              <h3 className="font-bold">Công trình biểu tượng</h3>
+              <p className="text-[11px] text-muted-foreground">
+                Đấu thầu mua lại từ Thành phố bằng tiền mặt để hoàn thành nhiệm vụ Chạm tới bầu trời (+1 tỷ).
+              </p>
+            </div>
+            {landmarks.map((plot) => {
+              const isOwned = plot.owner === 'me';
+              const isCity = isCityLandmarkPlot(plot);
+              const buyoutCost = isCity ? getLandmarkBuyoutTotalCost(s, plot) : 0;
+              const permErr = isForeignRegion(plot.region) ? checkForeignPermission(s, plot) : null;
+              const lmName = plot.b ? BUILDINGS[plot.b.type].name : 'Tháp biểu tượng';
+
+              return (
+                <article key={plot.id} className="space-y-2 border-b border-border pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <b className="truncate text-sm">{lmName}</b>
+                        {isOwned && (
+                          <span className="shrink-0 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                            Của bạn
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {plot.b?.type === 'thap_81'
+                          ? 'Cảm hứng Landmark 81 · Tháp tầng bậc'
+                          : plot.b?.type === 'thap_sen'
+                            ? 'Cảm hứng Bitexco · Dáng búp sen'
+                            : `${REGION_NAMES[plot.region]} · ${isForeignRegion(plot.region) ? FOREIGN_INFO[plot.region].city : ''}`}
+                      </p>
+                      <p className="mt-1 text-xs text-primary">
+                        Lô #{plot.id} · Thu ~{plot.b ? formatMoney(BUILDINGS[plot.b.type].income) : '0'}/ngày ·{' '}
+                        {isCity ? `Đấu thầu ${formatMoney(buyoutCost)}` : formatMoney(getPlotTotalValue(s, plot))}
+                      </p>
+                    </div>
+                    <Button
+                      aria-label={`Đến ${lmName}`}
+                      title="Đến công trình"
+                      size="icon"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => onVisit(plot.id)}
+                    >
+                      <Navigation size={16} />
+                    </Button>
+                  </div>
+
+                  {isCity && (
+                    <button
+                      type="button"
+                      disabled={Boolean(permErr) || s.cash < buyoutCost}
+                      onClick={() => {
+                        if (!window.confirm(`Đấu thầu mua lại ${lmName} giá ${formatMoney(buyoutCost)}?`)) return;
+                        act(() => {
+                          const res = buyCityLandmark(s, plot);
+                          if (res.error) return res.error;
+                          broadcastServerNews(
+                            `🏆 {player} vừa đấu thầu sở hữu siêu công trình biểu tượng ${res.landmarkName ?? lmName} giá ${formatMoney(res.totalPaid ?? buyoutCost)}!`
+                          ).catch(() => {});
+                          return null;
+                        }, `🏆 Đấu thầu thành công ${lmName}!`, plot);
+                      }}
+                      className="btn-gold w-full py-1.5 text-xs font-black"
+                    >
+                      {permErr
+                        ? `🛂 Cần Visa & ETEX (${REGION_NAMES[plot.region]})`
+                        : `🏆 Đấu thầu sở hữu (${formatMoney(buyoutCost)})`}
+                    </button>
+                  )}
+                </article>
+              );
+            })}
           </section>
 
           <section className="space-y-3 border-t border-border pt-4">

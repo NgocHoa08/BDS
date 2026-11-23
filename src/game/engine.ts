@@ -676,6 +676,48 @@ export function getBuyEmptyLandCost(state: GameState, plot: Plot): number {
   return price + price * RATES.regFee + getEtexFee(plot, price);
 }
 
+export function getLandmarkBuyoutPrice(state: GameState, plot: Plot): number {
+  return Math.round((getPlotTotalValue(state, plot) * 1.25) / MILLION) * MILLION;
+}
+
+export function getLandmarkBuyoutTotalCost(state: GameState, plot: Plot): number {
+  const price = getLandmarkBuyoutPrice(state, plot);
+  return price + price * RATES.regFee + getEtexFee(plot, price);
+}
+
+export function buyCityLandmark(
+  state: GameState,
+  plot: Plot
+): { error: string | null; landmarkName?: string; totalPaid?: number } {
+  if (!isCityLandmarkPlot(plot) || !plot.b || !isLandmarkType(plot.b.type)) {
+    return { error: 'Đây không phải công trình biểu tượng đang mở đấu thầu.' };
+  }
+  const permErr = checkForeignPermission(state, plot);
+  if (permErr) return { error: permErr };
+
+  const price = getLandmarkBuyoutPrice(state, plot);
+  const regFee = price * RATES.regFee;
+  const etexFee = getEtexFee(plot, price);
+  const totalCost = price + regFee + etexFee;
+  if (state.cash < totalCost) {
+    return { error: `Chưa đủ tiền mặt (cần ${formatMoney(totalCost)}).` };
+  }
+
+  const def = BUILDINGS[plot.b.type];
+  state.cash -= price;
+  recordExpense(state, regFee);
+  chargeEtexFee(state, plot, price);
+  plot.owner = 'me';
+  plot.forSale = false;
+  plot.b.buildLeft = 0;
+  plot.b.rented = true;
+  plot.b.listed = false;
+  plot.b.paused = false;
+
+  addLog(state, `🏆 Đấu thầu thành công ${def.name} lô #${plot.id} giá ${formatMoney(totalCost)}!`);
+  return { error: null, landmarkName: def.name, totalPaid: totalCost };
+}
+
 export type BulkBuySort = 'cheapest' | 'price_per_sqm' | 'area_desc';
 
 export function getBulkBuyLandCandidates(

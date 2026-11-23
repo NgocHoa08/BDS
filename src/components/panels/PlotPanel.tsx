@@ -8,6 +8,7 @@ import {
   FOREIGN_INFO,
   GOV_INFO,
   isForeignRegion,
+  isLandmarkType,
   LAND_TYPES,
   PERSONA_LABELS,
   REGION_NAMES,
@@ -15,6 +16,7 @@ import {
 } from '../../game/constants';
 import {
   applyForVisa,
+  buyCityLandmark,
   buyEmptyLand,
   checkForeignPermission,
   demolishBuilding,
@@ -23,6 +25,7 @@ import {
   getDailyIncome,
   getDaysUntilNextExpansion,
   getLandPrice,
+  getLandmarkBuyoutTotalCost,
   getMapHeight,
   getNpcById,
   getOwnedPlots,
@@ -39,6 +42,7 @@ import {
   toggleRentalListing,
   upgradeBuilding,
 } from '../../game/engine';
+import { broadcastServerNews } from '../../game/leaderboard';
 import type { GameState, Plot, RegionId } from '../../game/types';
 import { StatRow, type ActionRunner } from '../ui';
 
@@ -370,6 +374,38 @@ export function PlotPanel({
           </button>
         )}
 
+        {isCityLandmarkPlot(p) && p.b && (
+          <div className="col-span-2 space-y-2 rounded-2xl border border-primary/45 bg-gradient-to-br from-primary/15 via-secondary/70 to-secondary/40 p-3 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-black text-primary">🏆 Đấu thầu Công trình Biểu tượng</span>
+              <span className="font-bold text-success">~{formatMoney(BUILDINGS[p.b.type].income)}/ngày</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Mua lại quyền sở hữu từ Thành phố bằng tiền mặt để khai thác doanh thu khủng và hoàn thành nhiệm vụ{' '}
+              <b>Chạm tới bầu trời (+1 tỷ)</b>!
+            </p>
+            <button
+              type="button"
+              disabled={Boolean(foreignErr) || s.cash < getLandmarkBuyoutTotalCost(s, p)}
+              className="btn-gold w-full py-2 text-xs font-black"
+              onClick={() => {
+                const total = getLandmarkBuyoutTotalCost(s, p);
+                const lmName = BUILDINGS[p.b!.type].name;
+                act(() => {
+                  const res = buyCityLandmark(s, p);
+                  if (res.error) return res.error;
+                  broadcastServerNews(
+                    `🏆 {player} vừa đấu thầu sở hữu siêu công trình biểu tượng ${res.landmarkName ?? lmName} giá ${formatMoney(res.totalPaid ?? total)}!`
+                  ).catch(() => {});
+                  return null;
+                }, `🏆 Đấu thầu thành công ${lmName}!`, p);
+              }}
+            >
+              🏆 Đấu thầu sở hữu ({formatMoney(getLandmarkBuyoutTotalCost(s, p))})
+            </button>
+          </div>
+        )}
+
         {p.owner === 'me' && (
           <>
             {!p.b && (
@@ -421,7 +457,7 @@ export function PlotPanel({
             <button className="btn-ghost text-xs" onClick={() => act(() => startSellNegotiation(s, p))}>
               💰 Bán (thương lượng)
             </button>
-            {p.b && (
+            {p.b && !isLandmarkType(p.b.type) && (
               <button className="btn-ghost text-xs" onClick={() => act(() => demolishBuilding(s, p), 'Đã phá dỡ')}>
                 Phá dỡ
               </button>
