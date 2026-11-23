@@ -704,6 +704,7 @@ export default function App() {
           {panel === 'dat' && (
             <LandPanel
               s={s}
+              act={runAction}
               onPick={(id) => {
                 store.selected = id;
                 window.dispatchEvent(new CustomEvent('city-focus', { detail: id }));

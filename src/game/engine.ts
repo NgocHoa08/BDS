@@ -577,6 +577,92 @@ export function buyEmptyLand(state: GameState, plot: Plot): string | null {
   return null;
 }
 
+export function getBuyEmptyLandCost(state: GameState, plot: Plot): number {
+  const price = getLandPrice(state, plot);
+  return price + price * RATES.regFee + getEtexFee(plot, price);
+}
+
+export type BulkBuySort = 'cheapest' | 'price_per_sqm' | 'area_desc';
+
+export function getBulkBuyLandCandidates(
+  state: GameState,
+  regionFilter: RegionId | 'all' = 'all',
+  roadOnly = false,
+  sortBy: BulkBuySort = 'cheapest'
+): Plot[] {
+  const list = state.plots.filter(
+    (p) =>
+      p.kind === 'land' &&
+      !p.owner &&
+      (regionFilter === 'all' || p.region === regionFilter) &&
+      (!roadOnly || isNearRoad(state, p)) &&
+      !checkForeignPermission(state, p)
+  );
+
+  if (sortBy === 'area_desc') {
+    list.sort((a, b) => b.area - a.area || getLandPrice(state, a) - getLandPrice(state, b));
+  } else if (sortBy === 'price_per_sqm') {
+    list.sort((a, b) => getLandPrice(state, a) / a.area - getLandPrice(state, b) / b.area);
+  } else {
+    list.sort((a, b) => getBuyEmptyLandCost(state, a) - getBuyEmptyLandCost(state, b));
+  }
+  return list;
+}
+
+export function buyBulkEmptyLand(
+  state: GameState,
+  plotIds: number[]
+): { boughtIds: number[]; totalSpent: number; skipped: number; error: string | null } {
+  const boughtIds: number[] = [];
+  let totalSpent = 0;
+  let skipped = 0;
+  let firstErr: string | null = null;
+
+  for (const id of plotIds) {
+    const plot = state.plots[id];
+    if (!plot || plot.kind !== 'land' || plot.owner) {
+      skipped += 1;
+      continue;
+    }
+    const permErr = checkForeignPermission(state, plot);
+    if (permErr) {
+      skipped += 1;
+      firstErr ??= permErr;
+      continue;
+    }
+    const price = getLandPrice(state, plot);
+    const regFee = price * RATES.regFee;
+    const etexFee = getEtexFee(plot, price);
+    const totalCost = price + regFee + etexFee;
+    if (state.cash < totalCost) {
+      skipped += 1;
+      firstErr ??= 'Không đủ tiền mặt (gồm lệ phí trước bạ 0,5%).';
+      continue;
+    }
+
+    const beforeCash = state.cash;
+    state.cash -= price;
+    recordExpense(state, regFee);
+    chargeEtexFee(state, plot, price);
+    plot.owner = 'me';
+    plot.forSale = false;
+    totalSpent += beforeCash - state.cash;
+    boughtIds.push(id);
+  }
+
+  if (boughtIds.length > 0) {
+    addLog(state, `🛒 Mua hàng loạt ${boughtIds.length} lô đất trống (tổng ${formatMoney(totalSpent)}).`);
+    return { boughtIds, totalSpent, skipped, error: null };
+  }
+
+  return {
+    boughtIds,
+    totalSpent: 0,
+    skipped,
+    error: firstErr ?? 'Không có lô đất trống nào đủ điều kiện mua.',
+  };
+}
+
 export function buildOnPlot(state: GameState, plot: Plot, type: BuildingType): string | null {
   if (getActiveInvestment(state, plot.id)) return 'Lô đất đang có hợp đồng đầu tư.';
   if (plot.owner !== 'me' || plot.b) return 'Không thể xây ở đây.';
