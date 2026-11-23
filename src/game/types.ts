@@ -258,6 +258,34 @@ export interface FloatingFx {
 export interface DayTickResult {
   fx: Array<{ plotId: number; text: string; color: string }>;
   events: string[];
+  completedLandmarks?: string[];
+}
+
+export interface ChatMessage {
+  id: string;
+  user_id: string | null;
+  player_name: string;
+  kind: 'chat' | 'news';
+  message: string;
+  created_at: string;
+}
+
+export interface CitySnapshotPlot {
+  id: number;
+  b?: {
+    type: BuildingType;
+    level: number;
+    buildLeft: number;
+    paint?: BuildingPaint;
+  };
+}
+
+export interface CitySnapshot {
+  v: 1;
+  mapH: number;
+  tetMode: TetMode;
+  reclaimed: number[];
+  owned: CitySnapshotPlot[];
 }
 
 export type ActivePanel =

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   Building2,
   ChartColumn,
+  Compass,
   Crown,
+  Eye,
   Hammer,
   HandCoins,
   Landmark,
   Map as MapIcon,
+  Megaphone,
   Minus,
   Music,
   Pause,
@@ -16,7 +20,9 @@ import {
   Store,
   Trophy,
   VolumeX,
+  X,
 } from 'lucide-react';
+import { ChatWidget } from './components/ChatWidget';
 import { AuctionModal } from './components/modals/AuctionModal';
 import { NegotiationModal } from './components/modals/NegotiationModal';
 import { OfflineModal } from './components/modals/OfflineModal';
@@ -33,25 +39,36 @@ import { SettingsPanel } from './components/panels/SettingsPanel';
 import { StatsPanel } from './components/panels/StatsPanel';
 import { BottomSheet, Button, type ActionRunner } from './components/ui';
 import { BrandLogo } from './components/BrandLogo';
-import { MISSIONS, SPEEDS } from './game/constants';
+import { BUILDINGS, isLandmarkType, MISSIONS, SPEEDS } from './game/constants';
 import {
   advanceTime,
   applyOfflineProgress,
+  buildVisitedGameState,
   createInitialGameState,
   formatMoney,
   getNetWorth,
+  getOwnedPlots,
   loadGameState,
   saveGameState,
 } from './game/engine';
 import { CityCanvas } from './game/renderer/CityCanvas';
 import {
+  broadcastServerNews,
+  dismissLatestNews,
   disposeLeaderboard,
+  fetchCitySnapshot,
   initLeaderboard,
+  registerLiveStateGetter,
   saveCloudState,
+  setChatOpen,
   syncPlayerScore,
   useLeaderboard,
+  type LeaderboardEntry,
 } from './game/leaderboard';
 import {
+  enterVisitMode,
+  exitVisitMode,
+  getViewState,
   GRAPHICS_PRESETS,
   notifyStore,
   playSfx,
@@ -93,6 +110,8 @@ export default function App() {
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [tutStep, setTutStep] = useState(0);
   const [offlineReport, setOfflineReport] = useState<OfflineReport | null>(null);
+  const [visitingBusyId, setVisitingBusyId] = useState<string | null>(null);
+  const visitCycleRef = useRef(0);
   const toastSeqRef = useRef(0);
   const fpsRef = useRef<HTMLSpanElement | null>(null);
 
@@ -121,6 +140,7 @@ export default function App() {
     };
 
     store.s = loadGameState() ?? createInitialGameState();
+    registerLiveStateGetter(() => store.s);
     runOfflineCheck(store.s);
     notifyStore();
     initLeaderboard(store.s, (cloudState) => {
@@ -140,7 +160,7 @@ export default function App() {
       const dt = Math.min((now - last) / 1000, 0.25);
       last = now;
 
-      if (s && !s.paused && !s.nego && !s.auction && s.tutorialDone) {
+      if (s && !store.visiting && !s.paused && !s.nego && !s.auction && s.tutorialDone) {
         const dayTicks = advanceTime(s, (dt * s.speed * 24) / 12);
         for (const res of dayTicks) {
           res.fx.forEach((item) => {
@@ -148,6 +168,11 @@ export default function App() {
             if (p) pushFloatingFx(p.x, p.y, item.text, item.color);
           });
           res.events.forEach(pushToast);
+          if (res.completedLandmarks?.length) {
+            for (const lmName of res.completedLandmarks) {
+              broadcastServerNews(`🏙️ {player} vừa khánh thành siêu công trình ${lmName}!`).catch(() => {});
+            }
+          }
         }
         if (dayTicks.length) {
           saveGameState(s);
@@ -278,11 +303,88 @@ export default function App() {
     notifyStore();
   };
 
+  const visiting = store.visiting;
+  const viewState = getViewState() ?? s;
+
+  const handleVisitCity = async (entry: LeaderboardEntry, rank: number) => {
+    if (entry.user_id === lb.userId) {
+      pushToast('Đó là thành phố của chính bạn!');
+      return;
+    }
+    if (visitingBusyId) return;
+    setVisitingBusyId(entry.user_id);
+    try {
+      const res = await fetchCitySnapshot(entry.user_id);
+      if (!res.snapshot) {
+        pushToast('⚠ ' + (res.error ?? 'Chưa thể tải bản đồ thành phố này.'));
+        playSfx('error');
+        return;
+      }
+      const visitedState = buildVisitedGameState({ day: entry.day, cash: entry.cash }, res.snapshot);
+      const owned = getOwnedPlots(visitedState);
+      const built = owned.filter((p) => p.b);
+      enterVisitMode({
+        userId: entry.user_id,
+        playerName: entry.player_name,
+        rank,
+        netWorth: entry.net_worth,
+        day: entry.day,
+        title: entry.title,
+        ownedCount: owned.length,
+        buildingsCount: built.length,
+        state: visitedState,
+      });
+      visitCycleRef.current = 0;
+      setPanel(null);
+      setChatOpen(false);
+      playSfx('win');
+      pushToast(`👁️ Đang tham quan thành phố của ${entry.player_name} (Hạng #${rank})`);
+
+      // Auto-fly camera to their most impressive building (or first owned plot)
+      const sorted = [...owned].sort((a, b) => {
+        const scoreA = a.b ? (isLandmarkType(a.b.type) ? 1e12 : BUILDINGS[a.b.type].cost * a.b.level) : 0;
+        const scoreB = b.b ? (isLandmarkType(b.b.type) ? 1e12 : BUILDINGS[b.b.type].cost * b.b.level) : 0;
+        return scoreB - scoreA;
+      });
+      if (sorted[0]) {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('city-focus', { detail: sorted[0].id }));
+        }, 60);
+      }
+    } finally {
+      setVisitingBusyId(null);
+    }
+  };
+
+  const handleExitVisit = () => {
+    exitVisitMode();
+    setPanel(null);
+    playSfx('click');
+    pushToast('🏠 Đã quay về thành phố của bạn!');
+  };
+
+  const handleCycleVisitBuilding = () => {
+    if (!visiting) return;
+    const owned = getOwnedPlots(visiting.state);
+    const targets = owned.filter((p) => p.b);
+    const list = targets.length ? targets : owned;
+    if (!list.length) {
+      pushToast('Đại gia này chưa sở hữu lô đất nào trên bản đồ.');
+      return;
+    }
+    const target = list[visitCycleRef.current % list.length];
+    visitCycleRef.current += 1;
+    store.selected = target.id;
+    notifyStore();
+    window.dispatchEvent(new CustomEvent('city-focus', { detail: target.id }));
+    playSfx('click');
+  };
+
   const handlePlotTap = (plotId: number | null) => {
     store.selected = plotId;
     notifyStore();
     if (plotId !== null) {
-      const p = s.plots[plotId];
+      const p = viewState.plots[plotId];
       if (p && p.kind !== 'road' && p.kind !== 'water') {
         playSfx('click');
         setPanel('plot');
@@ -290,7 +392,7 @@ export default function App() {
     }
   };
 
-  const selectedPlot = store.selected === null ? null : s.plots[store.selected] ?? null;
+  const selectedPlot = store.selected === null ? null : viewState.plots[store.selected] ?? null;
   const netWorth = getNetWorth(s);
   const day = s.day;
   const monthIdx = Math.floor((day - 1) / 30) + 1;
@@ -304,6 +406,45 @@ export default function App() {
 
       {/* Unified Top HUD Stack (adapts to ultra-compact single-row in mobile landscape!) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-1.5 px-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))] [@media(max-height:520px)]:gap-1 [@media(max-height:520px)]:pt-1.5">
+        {visiting ? (
+          /* Visiting City Mode Top Banner */
+          <div className="panel pointer-events-auto flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/55 bg-background/90 px-3 py-2 shadow-xl [@media(max-height:520px)]:py-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                <Eye size={17} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-xs font-black sm:text-sm">
+                  <span className="truncate text-primary">{visiting.playerName}</span>
+                  {visiting.rank && (
+                    <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.2 text-[10px] font-black text-primary-foreground">
+                      Hạng #{visiting.rank}
+                    </span>
+                  )}
+                  <span className="hidden rounded-full bg-secondary px-1.5 py-0.2 text-[10px] font-semibold text-muted-foreground sm:inline">
+                    Chỉ xem
+                  </span>
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
+                  Ròng <b className="text-success">{formatMoney(visiting.netWorth)}</b> · {visiting.buildingsCount}{' '}
+                  công trình · {visiting.ownedCount} lô · Ngày {visiting.day}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button size="sm" variant="secondary" onClick={handleCycleVisitBuilding} className="h-8 px-2.5 text-xs">
+                <Compass size={14} className="text-primary" />
+                <span className="hidden sm:inline">Bay tới công trình</span>
+                <span className="sm:hidden">Xem nhà</span>
+              </Button>
+              <Button size="sm" onClick={handleExitVisit} className="h-8 px-2.5 text-xs font-black">
+                <ArrowLeft size={14} /> Về thành phố của tôi
+              </Button>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="panel pointer-events-auto flex flex-col gap-1.5 rounded-2xl px-2.5 py-2 sm:px-3 [@media(max-height:520px)]:flex-row [@media(max-height:520px)]:items-center [@media(max-height:520px)]:justify-between [@media(max-height:520px)]:gap-2 [@media(max-height:520px)]:py-1.5">
           <div className="flex items-center justify-between gap-2 [@media(max-height:520px)]:gap-3">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -432,6 +573,26 @@ export default function App() {
             </button>
           )}
         </div>
+        </>
+        )}
+
+        {/* Live Server-Wide News Ticker Banner (Top 1 overtake, Landmark built!) */}
+        {lb.latestNews && (
+          <div className="flex justify-center px-2">
+            <div className="panel pointer-events-auto animate-pop flex max-w-[92vw] items-center gap-2 rounded-full border border-primary/60 bg-gradient-to-r from-primary/25 via-background/95 to-primary/20 px-3 py-1 text-xs shadow-lg">
+              <Megaphone size={14} className="shrink-0 text-primary" />
+              <span className="truncate font-bold text-foreground">{lb.latestNews.message}</span>
+              <button
+                type="button"
+                aria-label="Đóng tin nóng"
+                onClick={dismissLatestNews}
+                className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Toasts neatly anchored below pills */}
         {toasts.length > 0 && (
@@ -470,28 +631,38 @@ export default function App() {
           aria-label="Bản đồ giá"
           title="Bản đồ nhiệt giá đất"
           onClick={() => {
-            s.heatmap = !s.heatmap;
+            viewState.heatmap = !viewState.heatmap;
             notifyStore();
           }}
           className={`panel rounded-full p-2 hover:brightness-110 [@media(max-height:520px)]:p-1.5 ${
-            s.heatmap ? 'text-primary' : ''
+            viewState.heatmap ? 'text-primary' : ''
           }`}
         >
           <MapIcon size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
         </button>
-        <Button
-          aria-label="Đầu tư và gọi vốn"
-          title="Đầu tư và gọi vốn"
-          size="icon"
-          variant="secondary"
-          className="rounded-full border border-border [@media(max-height:520px)]:h-8 [@media(max-height:520px)]:w-8"
-          onClick={() => setPanel('invest')}
-        >
-          <HandCoins size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
-        </Button>
+        {!visiting && (
+          <Button
+            aria-label="Đầu tư và gọi vốn"
+            title="Đầu tư và gọi vốn"
+            size="icon"
+            variant="secondary"
+            className="rounded-full border border-border [@media(max-height:520px)]:h-8 [@media(max-height:520px)]:w-8"
+            onClick={() => setPanel('invest')}
+          >
+            <HandCoins size={18} className="[@media(max-height:520px)]:h-4 [@media(max-height:520px)]:w-4" />
+          </Button>
+        )}
       </div>
 
-      {/* Bottom Navigation (compact horizontal row in mobile landscape!) */}
+      {/* Live Corner Chat Đại Gia & Server News */}
+      <ChatWidget
+        onToast={pushToast}
+        onVisitUser={handleVisitCity}
+        hidden={Boolean(panel || !s.tutorialDone)}
+      />
+
+      {/* Bottom Navigation (hidden while visiting another player's city) */}
+      {!visiting && (
       <nav className="absolute inset-x-0 bottom-0 z-10 px-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 sm:p-2">
         <div className="panel grid grid-cols-6 gap-0.5 rounded-2xl p-1 [@media(max-height:520px)]:py-0.5">
           {NAV_ITEMS.map(([key, Icon, label]) => (
@@ -508,12 +679,23 @@ export default function App() {
           ))}
         </div>
       </nav>
+      )}
 
       {/* Active Bottom Sheet */}
       {panel && (
-        <BottomSheet title={PANEL_TITLES[panel]} onClose={() => setPanel(null)}>
+        <BottomSheet
+          title={visiting && panel === 'plot' ? `Tham quan · ${visiting.playerName}` : PANEL_TITLES[panel]}
+          onClose={() => setPanel(null)}
+        >
           {panel === 'plot' && selectedPlot && (
-            <PlotPanel s={s} p={selectedPlot} act={runAction} openBuild={() => setPanel('build')} />
+            <PlotPanel
+              s={viewState}
+              p={selectedPlot}
+              act={runAction}
+              openBuild={() => setPanel('build')}
+              readOnly={Boolean(visiting)}
+              visitOwnerName={visiting?.playerName}
+            />
           )}
           {panel === 'dat' && (
             <LandPanel
@@ -575,7 +757,13 @@ export default function App() {
           )}
           {panel === 'stats' && <StatsPanel s={s} />}
           {panel === 'leaderboard' && (
-            <LeaderboardPanel s={s} onToast={pushToast} onOpenSettings={() => setPanel('settings')} />
+            <LeaderboardPanel
+              s={s}
+              onToast={pushToast}
+              onOpenSettings={() => setPanel('settings')}
+              onVisit={handleVisitCity}
+              visitingBusyId={visitingBusyId}
+            />
           )}
           {panel === 'settings' && (
             <SettingsPanel

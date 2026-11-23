@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Crown, Radio, RefreshCw, Save, Users, WifiOff } from 'lucide-react';
+import { Crown, Eye, Loader2, Radio, RefreshCw, Save, Users, WifiOff } from 'lucide-react';
 import { formatMoney, getNetWorth, getOwnedPlots, getPlayerTitle } from '../../game/engine';
 import {
   refreshLeaderboard,
   setPlayerDisplayName,
   syncPlayerScore,
   useLeaderboard,
+  type LeaderboardEntry,
 } from '../../game/leaderboard';
 import type { GameState } from '../../game/types';
 import { Button } from '../ui';
@@ -25,10 +26,14 @@ export function LeaderboardPanel({
   s,
   onToast,
   onOpenSettings,
+  onVisit,
+  visitingBusyId,
 }: {
   s: GameState;
   onToast: (msg: string) => void;
   onOpenSettings: () => void;
+  onVisit: (entry: LeaderboardEntry, rank: number) => void;
+  visitingBusyId?: string | null;
 }) {
   const lb = useLeaderboard();
   const [nameInput, setNameInput] = useState(lb.playerName);
@@ -58,6 +63,7 @@ export function LeaderboardPanel({
   const myIndex = lb.entries.findIndex((e) => e.user_id === lb.userId);
   const playerAbove = myIndex > 0 ? lb.entries[myIndex - 1] : null;
   const gapToAbove = playerAbove ? Math.max(0, playerAbove.net_worth - myWorth) : 0;
+  const top1 = lb.entries[0] ?? null;
 
   return (
     <div className="space-y-4">
@@ -225,9 +231,35 @@ export function LeaderboardPanel({
       ) : (
         /* Live Top 50 Supabase Realtime Leaderboard */
         <section className="space-y-2">
+          {top1 && top1.user_id !== lb.userId && (
+            <div className="flex items-center justify-between gap-2 rounded-2xl border border-primary/45 bg-gradient-to-r from-primary/15 via-primary/10 to-secondary/70 px-3 py-2 text-xs">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary">
+                  <Crown size={12} /> Quán quân hiện tại
+                </div>
+                <div className="truncate font-black text-foreground">
+                  {top1.player_name} · <span className="text-primary">{formatMoney(top1.net_worth)}</span>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                disabled={Boolean(visitingBusyId)}
+                onClick={() => onVisit(top1, 1)}
+                className="shrink-0 text-xs"
+              >
+                {visitingBusyId === top1.user_id ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Eye size={13} />
+                )}
+                Ghé thăm Top 1
+              </Button>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold">Top 50 Đại Gia BDSNH</h3>
-            <span className="text-[11px] text-muted-foreground">Tự cập nhật tức thì</span>
+            <span className="text-[11px] text-muted-foreground">Bấm Thăm để xem thành phố</span>
           </div>
 
           {lb.entries.length === 0 ? (
@@ -240,6 +272,7 @@ export function LeaderboardPanel({
                 const rank = idx + 1;
                 const isMe = entry.user_id === lb.userId;
                 const isOnline = lb.onlineUserIds.includes(entry.user_id);
+                const isBusy = visitingBusyId === entry.user_id;
                 const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
 
                 return (
@@ -276,9 +309,23 @@ export function LeaderboardPanel({
                       </div>
                     </div>
 
-                    <div className="shrink-0 text-right">
-                      <div className="font-black text-primary">{formatMoney(entry.net_worth)}</div>
-                      <div className="text-[10px] text-muted-foreground">{entry.missions_done}/9 NV</div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <div className="text-right">
+                        <div className="font-black text-primary">{formatMoney(entry.net_worth)}</div>
+                        <div className="text-[10px] text-muted-foreground">{entry.missions_done}/9 NV</div>
+                      </div>
+                      {!isMe && (
+                        <button
+                          type="button"
+                          disabled={Boolean(visitingBusyId)}
+                          title={`Ghé thăm thành phố của ${entry.player_name}`}
+                          onClick={() => onVisit(entry, rank)}
+                          className="inline-flex h-7 items-center gap-1 rounded-lg border border-primary/40 bg-primary/15 px-2 text-[11px] font-bold text-primary transition hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+                        >
+                          {isBusy ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />}
+                          <span className="hidden sm:inline">Thăm</span>
+                        </button>
+                      )}
                     </div>
                   </article>
                 );

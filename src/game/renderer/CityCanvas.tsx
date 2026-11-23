@@ -12,7 +12,7 @@ import {
   REGION_NAMES,
 } from '../constants';
 import { formatMoney, getLandPrice, getMapHeight, isTetNightActive } from '../engine';
-import { GRAPHICS_PRESETS, store } from '../store';
+import { getViewState, GRAPHICS_PRESETS, store } from '../store';
 import type { GameState, Plot, RegionId } from '../types';
 import {
   createAmbientSystem,
@@ -837,7 +837,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       prevNow = now;
       const dtSec = Math.min(rawDtMs / 1000, 0.05);
 
-      const state = store.s;
+      const state = getViewState();
       if (!state) return;
 
       const preset = GRAPHICS_PRESETS[store.graphicsQuality];
@@ -916,7 +916,8 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
         sx + pad >= viewMinX && sx - pad <= viewMaxX && sy + pad >= viewMinY && sy - pad <= viewMaxY;
 
       // 2. Blit visible HiDPI cached world chunks (bake lazily only if dirty!)
-      const chunkKey = `${store.version}:${state.plots.length}:${isNight ? 1 : 0}:${state.heatmap ? 1 : 0}:${store.graphicsQuality}`;
+      const viewId = store.visiting?.userId ?? 'self';
+      const chunkKey = `${viewId}:${store.version}:${state.plots.length}:${isNight ? 1 : 0}:${state.heatmap ? 1 : 0}:${store.graphicsQuality}`;
       let maxPricePerSqm = -1;
 
       screenCtx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * cam.x, dpr * cam.y);
@@ -1255,7 +1256,8 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
       if (!p) {
         if (e.pointerType === 'mouse') {
           const { gx, gy, mx, my } = pickTileAt(e.clientX, e.clientY);
-          const curMapH = store.s ? getMapHeight(store.s) : MAP_H;
+          const vs = getViewState();
+          const curMapH = vs ? getMapHeight(vs) : MAP_H;
           hoverRef.current = {
             plotId: gx >= 0 && gy >= 0 && gx < MAP_W && gy < curMapH ? gy * MAP_W + gx : null,
             palace: isPalaceCoord(gx, gy),
@@ -1306,7 +1308,8 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
           onPalaceTapRef.current();
           return;
         }
-        const curMapH = store.s ? getMapHeight(store.s) : MAP_H;
+        const vs = getViewState();
+        const curMapH = vs ? getMapHeight(vs) : MAP_H;
         onTapRef.current(gx >= 0 && gy >= 0 && gx < MAP_W && gy < curMapH ? gy * MAP_W + gx : null);
       } else {
         // Clamp inertia speed so flicking feels crisp, not chaotic
@@ -1335,7 +1338,7 @@ export function CityCanvas({ onTap, onPalaceTap, fpsRef }: CityCanvasProps) {
 
     const onCityFocus = (e: Event) => {
       const plotId = (e as CustomEvent<number>).detail;
-      const plot = store.s?.plots[plotId];
+      const plot = getViewState()?.plots[plotId];
       if (!plot) return;
       const [sx, sy] = toScreen(plot.x, plot.y);
       const tz = 1.25;

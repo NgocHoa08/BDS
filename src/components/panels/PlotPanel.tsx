@@ -61,8 +61,8 @@ const ROOF_SWATCHES = [
   { name: 'Đen tuyền', hex: '#2c323b' },
 ];
 
-function ownerLabel(s: GameState, p: Plot): string {
-  if (p.owner === 'me') return 'Bạn';
+function ownerLabel(s: GameState, p: Plot, visitOwnerName?: string): string {
+  if (p.owner === 'me') return visitOwnerName ? `👑 ${visitOwnerName}` : 'Bạn';
   if (isCityLandmarkPlot(p)) return 'Thành phố · Công trình biểu tượng';
   if (!p.owner) return 'Nhà nước (đất trống)';
   const npc = getNpcById(s, p.owner);
@@ -74,11 +74,15 @@ export function PlotPanel({
   p,
   act,
   openBuild,
+  readOnly = false,
+  visitOwnerName,
 }: {
   s: GameState;
   p: Plot;
   act: ActionRunner;
   openBuild: () => void;
+  readOnly?: boolean;
+  visitOwnerName?: string;
 }) {
   const [paintOpen, setPaintOpen] = useState(false);
 
@@ -140,22 +144,24 @@ export function PlotPanel({
               k="Công trình đang xây"
               v={s.plots.filter((pl) => pl.region === p.region && pl.b && pl.b.buildLeft > 0).length}
             />
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                className="btn-gold text-xs"
-                disabled={s.visas.includes(p.region)}
-                onClick={() => act(() => applyForVisa(s, p.region), 'Đã cấp visa! 🛂')}
-              >
-                {s.visas.includes(p.region) ? 'Đã có visa' : `🛂 Visa ${formatMoney(VISA_FEE)}`}
-              </button>
-              <button
-                className="btn-gold text-xs"
-                disabled={s.etex}
-                onClick={() => act(() => openEtexCard(s), 'Đã mở thẻ ETEX! 💳')}
-              >
-                {s.etex ? 'Đã có ETEX' : `💳 ETEX ${formatMoney(ETEX_CARD_FEE)}`}
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  className="btn-gold text-xs"
+                  disabled={s.visas.includes(p.region)}
+                  onClick={() => act(() => applyForVisa(s, p.region), 'Đã cấp visa! 🛂')}
+                >
+                  {s.visas.includes(p.region) ? 'Đã có visa' : `🛂 Visa ${formatMoney(VISA_FEE)}`}
+                </button>
+                <button
+                  className="btn-gold text-xs"
+                  disabled={s.etex}
+                  onClick={() => act(() => openEtexCard(s), 'Đã mở thẻ ETEX! 💳')}
+                >
+                  {s.etex ? 'Đã có ETEX' : `💳 ETEX ${formatMoney(ETEX_CARD_FEE)}`}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -182,7 +188,7 @@ export function PlotPanel({
   const totalValue = getPlotTotalValue(s, p);
   const bDef = p.b ? BUILDINGS[p.b.type] : null;
   const foreignErr = isForeignRegion(p.region) ? checkForeignPermission(s, p) : null;
-  const canPaint = Boolean(p.owner === 'me' && p.b && p.b.buildLeft === 0);
+  const canPaint = Boolean(!readOnly && p.owner === 'me' && p.b && p.b.buildLeft === 0);
 
   const applyWall = (hex: string) => {
     act(() => paintBuilding(p, { wall: hex, roof: p.b?.paint?.roof }));
@@ -209,7 +215,7 @@ export function PlotPanel({
       <StatRow k="Diện tích" v={`${p.area} m²`} />
       <StatRow k="Loại đất" v={LAND_TYPES[p.region]} />
       <StatRow k="Giá đất" v={`${formatMoney(landPrice)} (${formatMoney(landPrice / p.area)}/m²)`} c="text-primary" />
-      <StatRow k="Chủ sở hữu" v={ownerLabel(s, p)} />
+      <StatRow k="Chủ sở hữu" v={ownerLabel(s, p, visitOwnerName)} />
 
       {bDef && p.b && (
         <>
@@ -228,10 +234,31 @@ export function PlotPanel({
             />
           )}
           <StatRow k="Tổng giá trị" v={formatMoney(totalValue)} />
+          {readOnly && p.b.paint && (p.b.paint.wall || p.b.paint.roof) && (
+            <div className="flex items-center justify-between gap-3 py-1 text-sm">
+              <span className="text-muted-foreground">Màu sơn nhà</span>
+              <span className="inline-flex items-center gap-1.5">
+                {p.b.paint.wall && (
+                  <span
+                    title="Màu tường"
+                    style={{ backgroundColor: p.b.paint.wall }}
+                    className="inline-block h-4 w-4 rounded-full border border-white/40"
+                  />
+                )}
+                {p.b.paint.roof && (
+                  <span
+                    title="Màu mái"
+                    style={{ backgroundColor: p.b.paint.roof }}
+                    className="inline-block h-4 w-4 rounded-full border border-white/40"
+                  />
+                )}
+              </span>
+            </div>
+          )}
         </>
       )}
 
-      {foreignErr && (
+      {!readOnly && foreignErr && (
         <p className="mt-2 rounded-lg bg-secondary p-2 text-xs">
           🛂 {foreignErr} Chạm vào tòa nhà Chính phủ ở giữa nước này để đăng ký.
         </p>
@@ -315,6 +342,11 @@ export function PlotPanel({
         </section>
       )}
 
+      {readOnly ? (
+        <div className="mt-3 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-center text-xs text-primary">
+          👁️ Bạn đang tham quan thành phố của <b>{visitOwnerName ?? 'đại gia'}</b> (chế độ chỉ xem).
+        </div>
+      ) : (
       <div className="mt-3 grid grid-cols-2 gap-2">
         {p.kind === 'land' && !p.owner && (
           <button
@@ -373,6 +405,7 @@ export function PlotPanel({
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

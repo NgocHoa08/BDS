@@ -109,8 +109,21 @@ const initialGfx =
     ? loadGfxSettings()
     : { quality: 'ultra' as GraphicsQuality, showFps: true, sfx: true, music: true, musicVolume: 0.45 };
 
+export interface VisitingCity {
+  userId: string;
+  playerName: string;
+  rank: number | null;
+  netWorth: number;
+  day: number;
+  title: string;
+  ownedCount: number;
+  buildingsCount: number;
+  state: GameState;
+}
+
 export interface GameStore {
   s: GameState | null;
+  visiting: VisitingCity | null;
   fx: FloatingFx[];
   selected: number | null;
   version: number;
@@ -123,6 +136,7 @@ export interface GameStore {
 
 export const store: GameStore = {
   s: null,
+  visiting: null,
   fx: [],
   selected: null,
   version: 0,
@@ -132,6 +146,24 @@ export const store: GameStore = {
   graphicsQuality: initialGfx.quality,
   showFps: initialGfx.showFps,
 };
+
+export function getViewState(): GameState | null {
+  return store.visiting?.state ?? store.s;
+}
+
+export function enterVisitMode(city: VisitingCity): void {
+  store.visiting = city;
+  store.selected = null;
+  store.fx = [];
+  notifyStore();
+}
+
+export function exitVisitMode(): void {
+  store.visiting = null;
+  store.selected = null;
+  store.fx = [];
+  notifyStore();
+}
 
 export function saveGfxSettings(): void {
   try {

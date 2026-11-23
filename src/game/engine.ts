@@ -39,6 +39,7 @@ import {
 import type {
   BuildingType,
   CampaignType,
+  CitySnapshot,
   DayTickResult,
   ForeignRegionId,
   GameState,
@@ -1110,6 +1111,9 @@ export function stepDay(state: GameState): DayTickResult {
       if (plot.b.buildLeft === 0 && plot.owner === 'me') {
         result.fx.push({ plotId: plot.id, text: 'Hoàn thành!', color: '#ffd166' });
         addLog(state, `${BUILDINGS[plot.b.type].name} lô #${plot.id} đã hoàn thành.`);
+        if (isLandmarkType(plot.b.type)) {
+          (result.completedLandmarks ??= []).push(BUILDINGS[plot.b.type].name);
+        }
       }
       continue;
     }
@@ -1310,6 +1314,87 @@ export function stepDay(state: GameState): DayTickResult {
   if (state.history.length > 120) state.history.shift();
 
   return result;
+}
+
+// Compact City Snapshot for Visit Mode (Top 1 / BXH)
+export function extractCitySnapshot(state: GameState): CitySnapshot {
+  const mapH = getMapHeight(state);
+  const reclaimed: number[] = [];
+  for (const p of state.plots) {
+    if (p.region === 'sea' && p.y < 28 && p.x + p.y > 45.36 && p.kind === 'land') {
+      reclaimed.push(p.id);
+    }
+  }
+  const owned = getOwnedPlots(state).map((p) => ({
+    id: p.id,
+    ...(p.b
+      ? {
+          b: {
+            type: p.b.type,
+            level: p.b.level,
+            buildLeft: p.b.buildLeft,
+            ...(p.b.paint ? { paint: p.b.paint } : {}),
+          },
+        }
+      : {}),
+  }));
+  return {
+    v: 1,
+    mapH,
+    tetMode: state.tetMode,
+    reclaimed,
+    owned,
+  };
+}
+
+export function buildVisitedGameState(
+  meta: { day: number; cash: number },
+  snap: CitySnapshot
+): GameState {
+  const s = createInitialGameState();
+  const targetH = Math.min(MAX_MAP_H, Math.max(MAP_H, Math.floor(snap.mapH || MAP_H)));
+  if (targetH > MAP_H) {
+    expandWorldRows(s, targetH - MAP_H);
+  }
+  if (Array.isArray(snap.reclaimed)) {
+    for (const id of snap.reclaimed) {
+      const p = s.plots[id];
+      if (p) {
+        p.kind = 'land';
+        p.owner = null;
+        p.b = null;
+        p.forSale = false;
+      }
+    }
+  }
+  if (Array.isArray(snap.owned)) {
+    for (const item of snap.owned) {
+      const p = s.plots[item.id];
+      if (!p) continue;
+      p.kind = 'land';
+      p.owner = 'me';
+      p.forSale = false;
+      if (item.b && BUILDINGS[item.b.type]) {
+        p.b = {
+          type: item.b.type,
+          level: Math.max(1, Math.min(3, Math.floor(item.b.level || 1))),
+          buildLeft: Math.max(0, Math.floor(item.b.buildLeft || 0)),
+          rented: true,
+          listed: false,
+          ...(item.b.paint ? { paint: item.b.paint } : {}),
+        };
+      } else {
+        p.b = null;
+      }
+    }
+  }
+  s.day = Math.max(1, Math.floor(meta.day || 1));
+  s.hour = 10.5;
+  s.cash = Number(meta.cash) || 0;
+  s.tetMode = snap.tetMode ?? 'calendar';
+  s.paused = true;
+  s.tutorialDone = true;
+  return s;
 }
 
 // Offline earnings (capped at OFFLINE_MAX_HOURS = 4h)
