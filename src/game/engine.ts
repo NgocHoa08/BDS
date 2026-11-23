@@ -1130,6 +1130,200 @@ export function repayInvestment(state: GameState, invId: number): string | null 
   return null;
 }
 
+export function previewBulkInvestmentCapacity(
+  state: GameState,
+  plotIds: number[],
+  buildingType: BuildingType,
+  preferredNpcId: string | 'auto' = 'auto'
+): { eligibleCount: number; fundableCount: number; totalCapital: number } {
+  const def = BUILDINGS[buildingType];
+  if (!def) return { eligibleCount: 0, fundableCount: 0, totalCapital: 0 };
+
+  const capital = getProjectCapital(buildingType);
+  const eligible = plotIds
+    .map((id) => state.plots[id])
+    .filter(
+      (p): p is Plot =>
+        Boolean(
+          p &&
+            p.kind === 'land' &&
+            p.owner === 'me' &&
+            !p.b &&
+            !getActiveInvestment(state, p.id) &&
+            canBuildInPlot(p, buildingType) &&
+            !checkForeignPermission(state, p)
+        )
+    );
+
+  // Clone NPC cash pools to simulate exact multi-partner allocation
+  const npcPools = state.npcs
+    .filter((n) => !n.rival && (preferredNpcId === 'auto' || n.id === preferredNpcId))
+    .map((n) => ({ id: n.id, cash: n.cash }));
+
+  let cashLeft = state.cash;
+  let fundableCount = 0;
+  for (const plot of eligible) {
+    const etexFee = getEtexFee(plot, def.cost);
+    if (cashLeft < etexFee) continue;
+    npcPools.sort((a, b) => b.cash - a.cash);
+    const chosen = npcPools.find((n) => n.cash >= capital);
+    if (!chosen) break;
+    chosen.cash -= capital;
+    cashLeft -= etexFee;
+    fundableCount += 1;
+  }
+
+  return {
+    eligibleCount: eligible.length,
+    fundableCount,
+    totalCapital: fundableCount * capital,
+  };
+}
+
+export function signBulkInvestments(
+  state: GameState,
+  plotIds: number[],
+  buildingType: BuildingType,
+  termDays: number,
+  preferredNpcId: string | 'auto' = 'auto'
+): { signedIds: number[]; totalCapital: number; skipped: number; error: string | null } {
+  const def = BUILDINGS[buildingType];
+  if (!def) return { signedIds: [], totalCapital: 0, skipped: plotIds.length, error: 'Công trình không hợp lệ.' };
+  if (![90, 180, 365].includes(termDays)) {
+    return { signedIds: [], totalCapital: 0, skipped: plotIds.length, error: 'Kỳ hạn không hợp lệ.' };
+  }
+
+  const capital = getProjectCapital(buildingType);
+  const signedIds: number[] = [];
+  let totalCapital = 0;
+  let skipped = 0;
+  let firstErr: string | null = null;
+
+  for (const id of plotIds) {
+    const plot = state.plots[id];
+    if (!plot || plot.kind !== 'land' || plot.owner !== 'me' || plot.b || getActiveInvestment(state, id)) {
+      skipped += 1;
+      continue;
+    }
+    if (!canBuildInPlot(plot, buildingType)) {
+      skipped += 1;
+      firstErr ??= 'Công trình không đúng quy hoạch khu vực.';
+      continue;
+    }
+    const permErr = checkForeignPermission(state, plot);
+    if (permErr) {
+      skipped += 1;
+      firstErr ??= permErr;
+      continue;
+    }
+
+    const candidates = state.npcs
+      .filter((n) => !n.rival && n.cash >= capital && (preferredNpcId === 'auto' || n.id === preferredNpcId))
+      .sort((a, b) => b.cash - a.cash);
+    const npc = candidates[0];
+    if (!npc) {
+      skipped += 1;
+      firstErr ??= 'Các nhà đầu tư không còn đủ vốn cho dự án này.';
+      continue;
+    }
+
+    const etexFee = getEtexFee(plot, def.cost);
+    if (state.cash < etexFee) {
+      skipped += 1;
+      firstErr ??= 'Không đủ tiền mặt trả phí quẹt thẻ ETEX.';
+      continue;
+    }
+
+    npc.cash -= capital;
+    state.cash += capital;
+    state.cash -= def.cost;
+    recordExpense(state, def.cost * RATES.permit);
+    chargeEtexFee(state, plot, def.cost);
+    plot.b = {
+      type: buildingType,
+      level: 1,
+      buildLeft: def.days,
+      rented: false,
+      listed: def.rental,
+    };
+
+    state.investments.push({
+      id: state.investmentSeq++,
+      plotId: id,
+      npcId: npc.id,
+      principal: capital,
+      remaining: capital,
+      signedDay: state.day,
+      termDays,
+      endDay: state.day + termDays,
+      netProfit: 0,
+      sharedProfit: 0,
+      investorPaid: 0,
+      playerProfit: 0,
+      status: 'active',
+    });
+
+    signedIds.push(id);
+    totalCapital += capital;
+  }
+
+  if (signedIds.length > 0) {
+    addLog(
+      state,
+      `🤝 Gọi vốn hàng loạt ${signedIds.length} ${def.name} (tổng ${formatMoney(totalCapital)}, ${termDays} ngày, chia 70/30).`
+    );
+    return { signedIds, totalCapital, skipped, error: null };
+  }
+
+  return {
+    signedIds,
+    totalCapital: 0,
+    skipped,
+    error: firstErr ?? 'Không có lô đất nào đủ điều kiện gọi vốn.',
+  };
+}
+
+export function repayBulkInvestments(state: GameState): {
+  closedCount: number;
+  totalRepaid: number;
+  error: string | null;
+} {
+  const open = state.investments
+    .filter((i) => i.status !== 'closed')
+    .sort((a, b) => {
+      if (a.status === 'due' && b.status !== 'due') return -1;
+      if (b.status === 'due' && a.status !== 'due') return 1;
+      return a.remaining - b.remaining;
+    });
+
+  let closedCount = 0;
+  let totalRepaid = 0;
+
+  for (const inv of open) {
+    if (state.cash < inv.remaining) continue;
+    const npc = getNpcById(state, inv.npcId);
+    if (!npc) continue;
+    const amount = inv.remaining;
+    state.cash -= amount;
+    npc.cash += amount;
+    inv.remaining = 0;
+    inv.status = 'closed';
+    closedCount += 1;
+    totalRepaid += amount;
+  }
+
+  if (closedCount > 0) {
+    addLog(state, `✅ Tất toán hàng loạt ${closedCount} hợp đồng đầu tư (hoàn vốn ${formatMoney(totalRepaid)}).`);
+    return { closedCount, totalRepaid, error: null };
+  }
+
+  return {
+    closedCount: 0,
+    totalRepaid: 0,
+    error: open.length === 0 ? 'Không còn hợp đồng nào đang mở.' : 'Chưa đủ tiền mặt để tất toán hợp đồng nào.',
+  };
+}
+
 // Missions & Campaigns
 export function getMissionProgress(state: GameState, missionId: string): number {
   const owned = getOwnedPlots(state);
