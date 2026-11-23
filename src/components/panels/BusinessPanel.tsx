@@ -1,6 +1,7 @@
 import { BUILDINGS, REGION_NAMES } from '../../game/constants';
 import {
   formatMoney,
+  getBulkUpgradeCandidates,
   getDailyIncome,
   getNpcById,
   getOwnedPlots,
@@ -14,12 +15,15 @@ export function BusinessPanel({
   s,
   act,
   onPick,
+  onBulkUpgrade,
 }: {
   s: GameState;
   act: ActionRunner;
   onPick: (plotId: number) => void;
+  onBulkUpgrade?: () => void;
 }) {
   const built = getOwnedPlots(s).filter((p) => p.b);
+  const upgradeableCount = getBulkUpgradeCandidates(s).length;
   const totalDailyIncome = built.reduce((sum, p) => sum + getDailyIncome(s, p), 0);
   const totalDailyMaint = built.reduce(
     (sum, p) => sum + (!p.b || p.b.buildLeft ? 0 : BUILDINGS[p.b.type].maint * p.b.level),
@@ -40,7 +44,14 @@ export function BusinessPanel({
         </div>
       </div>
 
-      <h3 className="text-sm font-bold">Công trình đang khai thác</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-bold">Công trình đang khai thác</h3>
+        {upgradeableCount >= 1 && onBulkUpgrade && (
+          <button type="button" onClick={onBulkUpgrade} className="btn-gold px-2.5 py-1 text-[11px]">
+            ⬆ Nâng hàng loạt ({upgradeableCount})
+          </button>
+        )}
+      </div>
       {built.length === 0 && (
         <p className="text-sm text-muted-foreground">Chưa có công trình. Mua đất rồi xây dựng để có thu nhập.</p>
       )}

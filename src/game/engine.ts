@@ -616,6 +616,186 @@ export function upgradeBuilding(state: GameState, plot: Plot): string | null {
   return null;
 }
 
+export function getBuildPlotCost(plot: Plot, type: BuildingType): number {
+  const def = BUILDINGS[type];
+  return def.cost * (1 + RATES.permit) + getEtexFee(plot, def.cost);
+}
+
+export function getUpgradePlotCost(plot: Plot): number {
+  if (!plot.b) return 0;
+  const cost = getUpgradeCost(plot.b);
+  return cost + getEtexFee(plot, cost);
+}
+
+export function getBulkBuildCandidates(
+  state: GameState,
+  type: BuildingType,
+  regionFilter: RegionId | 'all' = 'all'
+): Plot[] {
+  return getOwnedPlots(state).filter(
+    (p) =>
+      p.kind === 'land' &&
+      !p.b &&
+      (regionFilter === 'all' || p.region === regionFilter) &&
+      !getActiveInvestment(state, p.id) &&
+      canBuildInPlot(p, type) &&
+      !checkForeignPermission(state, p)
+  );
+}
+
+export function buildBulkOnPlots(
+  state: GameState,
+  plotIds: number[],
+  type: BuildingType
+): { builtIds: number[]; totalSpent: number; skipped: number; error: string | null } {
+  const def = BUILDINGS[type];
+  if (!def) return { builtIds: [], totalSpent: 0, skipped: plotIds.length, error: 'Công trình không hợp lệ.' };
+
+  const builtIds: number[] = [];
+  let totalSpent = 0;
+  let skipped = 0;
+  let firstErr: string | null = null;
+
+  for (const id of plotIds) {
+    const plot = state.plots[id];
+    if (!plot || plot.owner !== 'me' || plot.kind !== 'land' || plot.b || getActiveInvestment(state, id)) {
+      skipped += 1;
+      continue;
+    }
+    if (!canBuildInPlot(plot, type)) {
+      skipped += 1;
+      firstErr ??= 'Quy hoạch không cho phép công trình này tại khu vực.';
+      continue;
+    }
+    const permErr = checkForeignPermission(state, plot);
+    if (permErr) {
+      skipped += 1;
+      firstErr ??= permErr;
+      continue;
+    }
+    const totalCost = getBuildPlotCost(plot, type);
+    if (state.cash < totalCost) {
+      skipped += 1;
+      firstErr ??= 'Không đủ tiền mặt (gồm phí giấy phép 2%).';
+      continue;
+    }
+
+    const beforeCash = state.cash;
+    state.cash -= def.cost;
+    recordExpense(state, def.cost * RATES.permit);
+    chargeEtexFee(state, plot, def.cost);
+    plot.b = {
+      type,
+      level: 1,
+      buildLeft: def.days,
+      rented: false,
+      listed: def.rental,
+    };
+    totalSpent += beforeCash - state.cash;
+    builtIds.push(id);
+  }
+
+  if (builtIds.length > 0) {
+    addLog(
+      state,
+      `🏗 Xây hàng loạt ${builtIds.length} ${def.name} (tổng ${formatMoney(totalSpent)}).`
+    );
+    return { builtIds, totalSpent, skipped, error: null };
+  }
+
+  return {
+    builtIds,
+    totalSpent: 0,
+    skipped,
+    error: firstErr ?? 'Không có lô đất nào đủ điều kiện để xây.',
+  };
+}
+
+export function getBulkUpgradeCandidates(
+  state: GameState,
+  regionFilter: RegionId | 'all' = 'all',
+  buildingFilter: BuildingType | 'all' = 'all',
+  levelFilter: 'all' | 1 | 2 = 'all'
+): Plot[] {
+  return getOwnedPlots(state)
+    .filter(
+      (p) =>
+        p.b &&
+        p.b.buildLeft === 0 &&
+        p.b.level < 3 &&
+        (regionFilter === 'all' || p.region === regionFilter) &&
+        (buildingFilter === 'all' || p.b.type === buildingFilter) &&
+        (levelFilter === 'all' || p.b.level === levelFilter) &&
+        !getActiveInvestment(state, p.id) &&
+        !checkForeignPermission(state, p)
+    )
+    .sort((a, b) => {
+      const la = a.b!.level;
+      const lb = b.b!.level;
+      if (la !== lb) return la - lb;
+      return getUpgradePlotCost(a) - getUpgradePlotCost(b);
+    });
+}
+
+export function upgradeBulkPlots(
+  state: GameState,
+  plotIds: number[]
+): { upgradedIds: number[]; totalSpent: number; skipped: number; error: string | null } {
+  const upgradedIds: number[] = [];
+  let totalSpent = 0;
+  let skipped = 0;
+  let firstErr: string | null = null;
+
+  for (const id of plotIds) {
+    const plot = state.plots[id];
+    if (!plot || !plot.b || plot.owner !== 'me' || plot.b.buildLeft > 0 || plot.b.level >= 3) {
+      skipped += 1;
+      continue;
+    }
+    if (getActiveInvestment(state, id)) {
+      skipped += 1;
+      firstErr ??= 'Tất toán hợp đồng đầu tư trước khi nâng cấp.';
+      continue;
+    }
+    const permErr = checkForeignPermission(state, plot);
+    if (permErr) {
+      skipped += 1;
+      firstErr ??= permErr;
+      continue;
+    }
+    const cost = getUpgradeCost(plot.b);
+    const totalCost = cost + getEtexFee(plot, cost);
+    if (state.cash < totalCost) {
+      skipped += 1;
+      firstErr ??= 'Không đủ tiền mặt để nâng cấp.';
+      continue;
+    }
+
+    const beforeCash = state.cash;
+    state.cash -= cost;
+    chargeEtexFee(state, plot, cost);
+    plot.b.level += 1;
+    plot.b.buildLeft = Math.ceil(BUILDINGS[plot.b.type].days / 2);
+    totalSpent += beforeCash - state.cash;
+    upgradedIds.push(id);
+  }
+
+  if (upgradedIds.length > 0) {
+    addLog(
+      state,
+      `⬆ Nâng cấp hàng loạt ${upgradedIds.length} công trình (tổng ${formatMoney(totalSpent)}).`
+    );
+    return { upgradedIds, totalSpent, skipped, error: null };
+  }
+
+  return {
+    upgradedIds,
+    totalSpent: 0,
+    skipped,
+    error: firstErr ?? 'Không có công trình nào đủ điều kiện nâng cấp.',
+  };
+}
+
 export function demolishBuilding(state: GameState, plot: Plot): string | null {
   if (getActiveInvestment(state, plot.id)) return 'Tất toán hợp đồng trước khi phá dỡ.';
   if (plot.owner === 'me' && plot.b) {

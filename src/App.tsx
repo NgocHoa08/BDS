@@ -28,7 +28,7 @@ import { NegotiationModal } from './components/modals/NegotiationModal';
 import { OfflineModal } from './components/modals/OfflineModal';
 import { TutorialModal } from './components/modals/TutorialModal';
 import { BankPanel } from './components/panels/BankPanel';
-import { BuildPanel } from './components/panels/BuildPanel';
+import { BuildPanel, type BuildPanelTab } from './components/panels/BuildPanel';
 import { BusinessPanel } from './components/panels/BusinessPanel';
 import { CityJourneyPanel } from './components/panels/CityJourneyPanel';
 import { InvestPanel } from './components/panels/InvestPanel';
@@ -107,6 +107,7 @@ export default function App() {
   useGameVersion();
   const lb = useLeaderboard();
   const [panel, setPanel] = useState<ActivePanel>(null);
+  const [buildTab, setBuildTab] = useState<BuildPanelTab>('single');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [tutStep, setTutStep] = useState(0);
   const [offlineReport, setOfflineReport] = useState<OfflineReport | null>(null);
@@ -692,7 +693,10 @@ export default function App() {
               s={viewState}
               p={selectedPlot}
               act={runAction}
-              openBuild={() => setPanel('build')}
+              openBuild={() => {
+                setBuildTab('single');
+                setPanel('build');
+              }}
               readOnly={Boolean(visiting)}
               visitOwnerName={visiting?.playerName}
             />
@@ -706,9 +710,13 @@ export default function App() {
                 setPanel('plot');
                 notifyStore();
               }}
+              onBulkBuild={() => {
+                setBuildTab('bulk_build');
+                setPanel('build');
+              }}
             />
           )}
-          {panel === 'build' && <BuildPanel s={s} p={selectedPlot} act={runAction} />}
+          {panel === 'build' && <BuildPanel s={s} p={selectedPlot} act={runAction} initialTab={buildTab} />}
           {panel === 'bank' && <BankPanel s={s} act={runAction} />}
           {panel === 'invest' && <InvestPanel s={s} act={runAction} />}
           {panel === 'city' && (
@@ -752,6 +760,10 @@ export default function App() {
                 window.dispatchEvent(new CustomEvent('city-focus', { detail: id }));
                 setPanel('plot');
                 notifyStore();
+              }}
+              onBulkUpgrade={() => {
+                setBuildTab('bulk_upgrade');
+                setPanel('build');
               }}
             />
           )}

@@ -11,8 +11,17 @@ import {
 import { notifyStore } from '../../game/store';
 import type { GameState, RegionId } from '../../game/types';
 
-export function LandPanel({ s, onPick }: { s: GameState; onPick: (plotId: number) => void }) {
+export function LandPanel({
+  s,
+  onPick,
+  onBulkBuild,
+}: {
+  s: GameState;
+  onPick: (plotId: number) => void;
+  onBulkBuild?: () => void;
+}) {
   const owned = getOwnedPlots(s);
+  const emptyOwnedCount = owned.filter((p) => p.kind === 'land' && !p.b).length;
   const mapH = getMapHeight(s);
   const nextExp = getDaysUntilNextExpansion(s);
   const freeCount = s.plots.filter((p) => p.kind === 'land' && !p.owner).length;
@@ -63,7 +72,14 @@ export function LandPanel({ s, onPick }: { s: GameState; onPick: (plotId: number
         </div>
       )}
 
-      <h3 className="text-sm font-bold">Lô đất của bạn ({owned.length})</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-bold">Lô đất của bạn ({owned.length})</h3>
+        {emptyOwnedCount >= 1 && onBulkBuild && (
+          <button type="button" onClick={onBulkBuild} className="btn-gold px-2.5 py-1 text-[11px]">
+            🏗 Xây hàng loạt ({emptyOwnedCount} lô trống)
+          </button>
+        )}
+      </div>
       {owned.length === 0 && (
         <p className="text-sm text-muted-foreground">
           Bạn chưa có lô đất nào. Chạm vào ô đất trống trên bản đồ để mua. Vùng quê và vùng núi có giá rẻ nhất để khởi
