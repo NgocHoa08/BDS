@@ -876,6 +876,136 @@ export function buyBulkEmptyLand(
   };
 }
 
+// =========================================================================
+// Bulk Buyout of Already-Owned Plots (NPCs & Rival Corporations)
+// =========================================================================
+
+export function getNpcBuyoutPrice(state: GameState, plot: Plot): number {
+  const npc = plot.owner ? getNpcById(state, plot.owner) : undefined;
+  const persona: PersonaId = npc?.persona ?? 'fair';
+  const value = getPlotTotalValue(state, plot);
+  const relMult = plot.forSale ? 1 : 1.2;
+  const raw = value * BUY_ASK_MULT[persona] * relMult * getEffectiveLandDiscount(state);
+  return Math.round(raw / MILLION) * MILLION;
+}
+
+export function getNpcBuyoutTotalCost(state: GameState, plot: Plot): number {
+  const price = getNpcBuyoutPrice(state, plot);
+  return price + price * RATES.regFee + getEtexFee(plot, price);
+}
+
+export interface BulkOwnedFilter {
+  region?: RegionId | 'all';
+  forSaleOnly?: boolean;
+  emptyOnly?: boolean;
+  rivalOnly?: boolean;
+  roadOnly?: boolean;
+  sortBy?: BulkBuySort;
+}
+
+export function getBulkBuyOwnedCandidates(state: GameState, filter: BulkOwnedFilter = {}): Plot[] {
+  const {
+    region = 'all',
+    forSaleOnly = false,
+    emptyOnly = false,
+    rivalOnly = false,
+    roadOnly = false,
+    sortBy = 'cheapest',
+  } = filter;
+
+  const list = state.plots.filter((p) => {
+    if (p.kind !== 'land' || !p.owner || p.owner === 'me' || isCityLandmarkPlot(p)) return false;
+    if (region !== 'all' && p.region !== region) return false;
+    if (forSaleOnly && !p.forSale) return false;
+    if (emptyOnly && p.b) return false;
+    if (roadOnly && !isNearRoad(state, p)) return false;
+    if (rivalOnly) {
+      const npc = getNpcById(state, p.owner);
+      if (!npc?.rival) return false;
+    }
+    if (checkForeignPermission(state, p)) return false;
+    return true;
+  });
+
+  if (sortBy === 'area_desc') {
+    list.sort((a, b) => b.area - a.area || getNpcBuyoutTotalCost(state, a) - getNpcBuyoutTotalCost(state, b));
+  } else if (sortBy === 'price_per_sqm') {
+    list.sort((a, b) => getNpcBuyoutTotalCost(state, a) / a.area - getNpcBuyoutTotalCost(state, b) / b.area);
+  } else {
+    list.sort((a, b) => getNpcBuyoutTotalCost(state, a) - getNpcBuyoutTotalCost(state, b));
+  }
+  return list;
+}
+
+export function buyBulkOwnedPlots(
+  state: GameState,
+  plotIds: number[]
+): { boughtIds: number[]; totalSpent: number; skipped: number; error: string | null } {
+  const boughtIds: number[] = [];
+  let totalSpent = 0;
+  let skipped = 0;
+  let firstErr: string | null = null;
+  const hasBroker = hasStaff(state, 'super_broker');
+
+  for (const id of plotIds) {
+    const plot = state.plots[id];
+    if (!plot || plot.kind !== 'land' || !plot.owner || plot.owner === 'me' || isCityLandmarkPlot(plot)) {
+      skipped += 1;
+      continue;
+    }
+    const permErr = checkForeignPermission(state, plot);
+    if (permErr) {
+      skipped += 1;
+      firstErr ??= permErr;
+      continue;
+    }
+    const npc = getNpcById(state, plot.owner);
+    if (!npc) {
+      skipped += 1;
+      continue;
+    }
+
+    const price = getNpcBuyoutPrice(state, plot);
+    const regFee = price * RATES.regFee;
+    const etexFee = getEtexFee(plot, price);
+    const totalCost = price + regFee + etexFee;
+    if (state.cash < totalCost) {
+      skipped += 1;
+      firstErr ??= 'Không đủ tiền mặt (gồm giá mua lại & lệ phí trước bạ 0,5%).';
+      continue;
+    }
+
+    const beforeCash = state.cash;
+    state.cash -= price;
+    recordExpense(state, regFee);
+    chargeEtexFee(state, plot, price);
+    npc.cash += price;
+    plot.owner = 'me';
+    plot.forSale = false;
+    if (plot.b) {
+      plot.b.listed = BUILDINGS[plot.b.type].rental;
+      if (hasBroker && BUILDINGS[plot.b.type].rental && plot.b.buildLeft === 0) {
+        plot.b.rented = true;
+      }
+    }
+    totalSpent += beforeCash - state.cash;
+    boughtIds.push(id);
+  }
+
+  if (boughtIds.length > 0) {
+    ensureDailyState(state).boughtToday += boughtIds.length;
+    addLog(state, `🤝 Thâu tóm hàng loạt ${boughtIds.length} lô đất có chủ (tổng ${formatMoney(totalSpent)}).`);
+    return { boughtIds, totalSpent, skipped, error: null };
+  }
+
+  return {
+    boughtIds,
+    totalSpent: 0,
+    skipped,
+    error: firstErr ?? 'Không có lô đất có chủ nào đủ điều kiện mua lại.',
+  };
+}
+
 export function buildOnPlot(state: GameState, plot: Plot, type: BuildingType): string | null {
   if (getActiveInvestment(state, plot.id)) return 'Lô đất đang có hợp đồng đầu tư.';
   if (plot.owner !== 'me' || plot.b) return 'Không thể xây ở đây.';
