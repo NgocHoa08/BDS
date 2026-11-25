@@ -60,6 +60,12 @@ import {
 } from './game/engine';
 import { CityCanvas } from './game/renderer/CityCanvas';
 import {
+  getFbInstantInfo,
+  loadFbCloudState,
+  onFbPause,
+  saveFbCloudState,
+} from './game/fbInstant';
+import {
   broadcastServerNews,
   dismissLatestNews,
   disposeLeaderboard,
@@ -68,6 +74,7 @@ import {
   registerLiveStateGetter,
   saveCloudState,
   setChatOpen,
+  setPlayerDisplayName,
   syncPlayerScore,
   useLeaderboard,
   type LeaderboardEntry,
@@ -153,6 +160,28 @@ export default function App() {
     registerLiveStateGetter(() => store.s);
     runOfflineCheck(store.s);
     notifyStore();
+
+    // Facebook Instant Games: auto-fill FB display name & pull FB Player Cloud Save if local is fresh
+    const fb = getFbInstantInfo();
+    if (fb.active) {
+      if (fb.playerName && lb.playerName.startsWith('Đại gia #')) {
+        setPlayerDisplayName(fb.playerName, store.s);
+      }
+      if (store.s.day <= 1 && store.s.total.revenue === 0) {
+        loadFbCloudState()
+          .then((fbState) => {
+            if (fbState) {
+              store.s = fbState;
+              store.selected = null;
+              runOfflineCheck(fbState);
+              notifyStore();
+              pushToast('🎮 Đã tải tiến trình từ Facebook Cloud!');
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
     initLeaderboard(store.s, (cloudState) => {
       store.s = cloudState;
       store.selected = null;
@@ -187,6 +216,7 @@ export default function App() {
         }
         if (dayTicks.length) {
           saveGameState(s);
+          saveFbCloudState(s).catch(() => {});
           syncPlayerScore(s).catch(() => {});
           saveCloudState(s).catch(() => {});
         }
@@ -253,10 +283,15 @@ export default function App() {
     const onHide = () => {
       if (store.s) {
         saveGameState(store.s);
+        saveFbCloudState(store.s, true).catch(() => {});
         syncPlayerScore(store.s, true).catch(() => {});
         saveCloudState(store.s, true).catch(() => {});
       }
     };
+    const offFbPause = onFbPause(() => {
+      onHide();
+      chillMusic.stop();
+    });
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         onHide();
@@ -276,6 +311,7 @@ export default function App() {
       window.removeEventListener('keydown', onFirstGesture);
       window.removeEventListener('pagehide', onHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      offFbPause();
       chillMusic.stop();
       disposeLeaderboard();
     };

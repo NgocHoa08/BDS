@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Crown, Eye, Loader2, Radio, RefreshCw, Save, Users, WifiOff } from 'lucide-react';
+import { Crown, Eye, Loader2, Radio, RefreshCw, Save, Share2, UserPlus, Users, WifiOff } from 'lucide-react';
 import { formatMoney, getNetWorth, getOwnedPlots, getPlayerTitle } from '../../game/engine';
+import { inviteFacebookFriends, isFbInstantActive, shareScoreToFacebook } from '../../game/fbInstant';
 import {
   refreshLeaderboard,
   setPlayerDisplayName,
@@ -153,7 +154,7 @@ export function LeaderboardPanel({
           </Button>
         </div>
 
-        {lb.configured && lb.isAnonymous && (
+        {lb.configured && lb.isAnonymous && !isFbInstantActive() && (
           <div className="flex items-center justify-between gap-2 rounded-lg bg-background/50 px-2.5 py-1.5 text-[11px]">
             <span className="text-muted-foreground">☁️ Muốn đổi thiết bị không mất điểm?</span>
             <button onClick={onOpenSettings} className="shrink-0 font-bold text-primary hover:underline">
@@ -161,6 +162,35 @@ export function LeaderboardPanel({
             </button>
           </div>
         )}
+
+        {/* Facebook Share & Invite Friends */}
+        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+          <button
+            type="button"
+            onClick={async () => {
+              const msg = await shareScoreToFacebook(
+                lb.playerName,
+                formatMoney(myWorth),
+                lb.myRank ? `Hạng #${lb.myRank}` : myTitle,
+                s.day
+              );
+              onToast(msg);
+            }}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1877F2]/20 py-1.5 text-xs font-bold text-[#60a5fa] transition hover:bg-[#1877F2]/30"
+          >
+            <Share2 size={13} /> Khoe lên Facebook
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const msg = await inviteFacebookFriends();
+              onToast(msg);
+            }}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-background/60 py-1.5 text-xs font-bold text-foreground transition hover:bg-background"
+          >
+            <UserPlus size={13} className="text-primary" /> Rủ bạn bè chơi
+          </button>
+        </div>
       </section>
 
       {lb.error && (
