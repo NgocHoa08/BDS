@@ -187,15 +187,31 @@ export async function saveFbCloudState(state: GameState, force = false): Promise
   }
 }
 
+function loadLogoImage(): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(null), 1200);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
+    img.src = './logo.png';
+  });
+}
+
 /**
  * Generates a crisp 600x315 gold-luxury achievement card PNG (base64) for FBInstant.shareAsync.
  */
-function renderAchievementShareCard(
+async function renderAchievementShareCard(
   playerName: string,
   netWorthText: string,
   rankText: string,
   day: number
-): string {
+): Promise<string> {
   const c = document.createElement('canvas');
   c.width = 600;
   c.height = 315;
@@ -203,9 +219,9 @@ function renderAchievementShareCard(
   if (!ctx) return '';
 
   const bg = ctx.createLinearGradient(0, 0, 600, 315);
-  bg.addColorStop(0, '#111827');
-  bg.addColorStop(0.55, '#1e293b');
-  bg.addColorStop(1, '#292218');
+  bg.addColorStop(0, '#102e5e');
+  bg.addColorStop(0.55, '#132645');
+  bg.addColorStop(1, '#09142a');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, 600, 315);
 
@@ -214,25 +230,33 @@ function renderAchievementShareCard(
   ctx.lineWidth = 4;
   ctx.strokeRect(14, 14, 572, 287);
 
+  // Draw official brand logo on right side if loaded
+  const logo = await loadLogoImage();
+  if (logo) {
+    const lw = 200;
+    const lh = Math.round((logo.height / logo.width) * lw);
+    ctx.drawImage(logo, 376, Math.round((315 - lh) / 2) - 8, lw, lh);
+  }
+
   ctx.fillStyle = '#fbbf24';
-  ctx.font = 'bold 28px sans-serif';
-  ctx.fillText('BDSNH — ĐẾ CHẾ BẤT ĐỘNG SẢN', 42, 68);
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText('ĐẠI GIA BẤT ĐỘNG SẢN', 36, 64);
 
   ctx.fillStyle = '#e2e8f0';
-  ctx.font = 'bold 24px sans-serif';
-  ctx.fillText(`${playerName} · ${rankText}`, 42, 122);
+  ctx.font = 'bold 21px sans-serif';
+  ctx.fillText(`${playerName} · ${rankText}`, 36, 112);
 
   ctx.fillStyle = '#fde047';
-  ctx.font = '900 54px sans-serif';
-  ctx.fillText(netWorthText, 42, 198);
+  ctx.font = '900 44px sans-serif';
+  ctx.fillText(netWorthText, 36, 182);
 
   ctx.fillStyle = '#94a3b8';
-  ctx.font = '600 18px sans-serif';
-  ctx.fillText(`Ngày ${day} · Mua đất · Xây Siêu Dự Án 2×2 · Lướt sóng Chứng khoán`, 42, 246);
+  ctx.font = '600 16px sans-serif';
+  ctx.fillText(`Ngày ${day} · Siêu Dự Án 2×2 · Chứng khoán BĐS`, 36, 232);
 
   ctx.fillStyle = '#34d399';
-  ctx.font = 'bold 18px sans-serif';
-  ctx.fillText('▶ Vào đấu trí & ghé thăm thành phố của tôi ngay!', 42, 280);
+  ctx.font = 'bold 17px sans-serif';
+  ctx.fillText('▶ Vào đấu trí & ghé thăm thành phố của tôi!', 36, 274);
 
   return c.toDataURL('image/png');
 }
@@ -243,11 +267,11 @@ export async function shareScoreToFacebook(
   rankText: string,
   day: number
 ): Promise<string> {
-  const shareText = `${playerName} đang đạt ${netWorthText} (${rankText}) tại BDSNH — Đế Chế Bất Động Sản! Vào đua Top & ghé thăm thành phố của tôi ngay!`;
+  const shareText = `${playerName} đang đạt ${netWorthText} (${rankText}) tại Đại Gia Bất Động Sản! Vào đua Top & ghé thăm thành phố của tôi ngay!`;
 
   if (fbInfo.active && window.FBInstant) {
     try {
-      const image = renderAchievementShareCard(playerName, netWorthText, rankText, day);
+      const image = await renderAchievementShareCard(playerName, netWorthText, rankText, day);
       await window.FBInstant.shareAsync({
         intent: 'SHARE',
         image,

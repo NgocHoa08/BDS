@@ -4,5 +4,5 @@ dist
 .env.local
 .env.*.local
 bdsnh-fb-instant.zip
+fb-assets/
 *.local
-bdsnh-fb-instant.zip
