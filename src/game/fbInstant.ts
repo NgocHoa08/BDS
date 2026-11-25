@@ -38,6 +38,7 @@ interface FBInstantAPI {
 declare global {
   interface Window {
     FBInstant?: FBInstantAPI;
+    __FB_INIT_PROMISE__?: Promise<boolean>;
   }
 }
 
@@ -112,9 +113,10 @@ export async function initFbInstant(): Promise<FbInstantInfo> {
 
   const fb = window.FBInstant;
   try {
-    await withTimeout(fb.initializeAsync(), 3500);
-    fb.setLoadingProgress(40);
-    fb.onPause(() => {
+    const initPromise = window.__FB_INIT_PROMISE__ ?? fb.initializeAsync().then(() => true);
+    await withTimeout(initPromise, 12000);
+    fb.setLoadingProgress?.(65);
+    fb.onPause?.(() => {
       pauseHandlers.forEach((fn) => {
         try {
           fn();
@@ -123,14 +125,14 @@ export async function initFbInstant(): Promise<FbInstantInfo> {
         }
       });
     });
-    fb.setLoadingProgress(100);
-    await withTimeout(fb.startGameAsync(), 4500);
+    fb.setLoadingProgress?.(100);
+    await withTimeout(fb.startGameAsync(), 12000);
 
     fbInfo = {
       active: true,
-      playerId: fb.player.getID(),
-      playerName: fb.player.getName(),
-      playerPhoto: fb.player.getPhoto(),
+      playerId: fb.player?.getID?.() ?? null,
+      playerName: fb.player?.getName?.() ?? null,
+      playerPhoto: fb.player?.getPhoto?.() ?? null,
       platform: fb.getPlatform?.() ?? null,
     };
 
