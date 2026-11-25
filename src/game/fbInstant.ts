@@ -38,7 +38,8 @@ interface FBInstantAPI {
 declare global {
   interface Window {
     FBInstant?: FBInstantAPI;
-    __FB_INIT_PROMISE__?: Promise<boolean>;
+    __FB_START_PROMISE__?: Promise<boolean>;
+    __FB_STARTED__?: boolean;
   }
 }
 
@@ -102,8 +103,17 @@ export function onFbPause(cb: () => void): () => void {
   return () => pauseHandlers.delete(cb);
 }
 
+function safeCall<T>(fn: (() => T) | undefined): T | null {
+  try {
+    return typeof fn === 'function' ? fn() : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Initializes Facebook Instant Games SDK v7.1 when running inside Meta Instant Games.
+ * Waits for Facebook Instant Games SDK initialization + startGameAsync() (driven by fb-boot.js).
+ * Registers onPause and reads player profile ONLY AFTER startGameAsync() has resolved.
  * Outside Facebook (normal browser / Vercel), resolves immediately in ~0ms.
  */
 export async function initFbInstant(): Promise<FbInstantInfo> {
@@ -113,37 +123,61 @@ export async function initFbInstant(): Promise<FbInstantInfo> {
 
   const fb = window.FBInstant;
   try {
-    const initPromise = window.__FB_INIT_PROMISE__ ?? fb.initializeAsync().then(() => true);
-    await withTimeout(initPromise, 12000);
-    fb.setLoadingProgress?.(65);
-    fb.onPause?.(() => {
-      pauseHandlers.forEach((fn) => {
+    let started = Boolean(window.__FB_STARTED__);
+    if (!started) {
+      if (window.__FB_START_PROMISE__) {
+        started = await withTimeout(window.__FB_START_PROMISE__, 15000);
+      } else {
+        await withTimeout(fb.initializeAsync(), 10000);
         try {
-          fn();
+          fb.setLoadingProgress?.(100);
         } catch {
           // ignore
         }
+        await withTimeout(fb.startGameAsync(), 10000);
+        started = true;
+      }
+    }
+
+    if (!started) {
+      return fbInfo;
+    }
+
+    // Register onPause ONLY AFTER startGameAsync() has resolved
+    try {
+      fb.onPause?.(() => {
+        pauseHandlers.forEach((fn) => {
+          try {
+            fn();
+          } catch {
+            // ignore
+          }
+        });
       });
-    });
-    fb.setLoadingProgress?.(100);
-    await withTimeout(fb.startGameAsync(), 12000);
+    } catch {
+      // ignore
+    }
 
     fbInfo = {
       active: true,
-      playerId: fb.player?.getID?.() ?? null,
-      playerName: fb.player?.getName?.() ?? null,
-      playerPhoto: fb.player?.getPhoto?.() ?? null,
-      platform: fb.getPlatform?.() ?? null,
+      playerId: safeCall(() => fb.player?.getID?.() ?? null),
+      playerName: safeCall(() => fb.player?.getName?.() ?? null),
+      playerPhoto: safeCall(() => fb.player?.getPhoto?.() ?? null),
+      platform: safeCall(() => fb.getPlatform?.() ?? null),
     };
 
     // Gently prompt home-screen shortcut on supported mobile FB clients
-    fb.canCreateShortcutAsync?.()
-      .then((ok) => {
-        if (ok) fb.createShortcutAsync?.().catch(() => {});
-      })
-      .catch(() => {});
-  } catch {
-    // Running outside an active Instant Games session -> fall back to standard web mode cleanly
+    try {
+      fb.canCreateShortcutAsync?.()
+        .then((ok) => {
+          if (ok) fb.createShortcutAsync?.().catch(() => {});
+        })
+        .catch(() => {});
+    } catch {
+      // ignore
+    }
+  } catch (err) {
+    console.error('[FBInstant init error]', err);
     fbInfo = { active: false, playerId: null, playerName: null, playerPhoto: null, platform: null };
   }
 
