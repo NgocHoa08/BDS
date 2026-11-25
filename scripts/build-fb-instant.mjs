@@ -20,10 +20,20 @@ if (existsSync(outZip)) {
 }
 
 if (process.platform === 'win32') {
-  execSync(
-    `powershell -NoProfile -Command "Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}' -Force"`,
-    { stdio: 'inherit' }
-  );
+  // Use POSIX forward slashes inside ZIP so Linux hosts (Facebook Instant Games) unpack assets/ cleanly
+  const psScript = [
+    'Add-Type -AssemblyName System.IO.Compression',
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+    `$dist = (Resolve-Path '${distDir}').Path`,
+    `$zip = [System.IO.Compression.ZipFile]::Open('${outZip}', [System.IO.Compression.ZipArchiveMode]::Create)`,
+    'try {',
+    '  Get-ChildItem -Path $dist -Recurse -File | ForEach-Object {',
+    '    $rel = $_.FullName.Substring($dist.Length + 1).Replace([char]92, [char]47)',
+    '    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null',
+    '  }',
+    '} finally { $zip.Dispose() }',
+  ].join('; ');
+  execSync(`powershell -NoProfile -Command "${psScript}"`, { stdio: 'inherit' });
 } else {
   execSync(`cd "${distDir}" && zip -r "${outZip}" .`, { stdio: 'inherit' });
 }
